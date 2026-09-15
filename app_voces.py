@@ -29,42 +29,35 @@ def transcribir():
     archivo.save(ruta_audio)
 
     try:
-        if tipo_procesamiento == 'rapida':
-            # --- MOTOR BÁSICO (Súper rápido) ---
-            with open(ruta_audio, "rb") as f:
-                transcripcion = client.audio.transcriptions.create(
-                    file=(archivo.filename, f.read()),
+        # --- PASO 1: PICAR EL AUDIO SIEMPRE (Evita el Error 413) ---
+        chunk_pattern = os.path.join(temp_dir, "chunk_%03d.mp3")
+        subprocess.run([
+            "ffmpeg", "-y", "-i", ruta_audio,
+            "-f", "segment", "-segment_time", "600",
+            "-c:a", "libmp3lame", chunk_pattern
+        ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        
+        # --- PASO 2: OBTENER EL TEXTO BASE DE TODOS LOS PEDAZOS ---
+        texto_crudo = ""
+        chunks_generados = sorted(glob.glob(os.path.join(temp_dir, "chunk_*.mp3")))
+        for chunk_path in chunks_generados:
+            with open(chunk_path, "rb") as af:
+                t = client.audio.transcriptions.create(
+                    file=(os.path.basename(chunk_path), af.read()),
                     model="whisper-large-v3",
                     response_format="text"
                 )
+            texto_crudo += t + "\n"
+            os.remove(chunk_path)
+
+        # --- PASO 3: ENTREGAR SEGÚN EL MODO ELEGIDO ---
+        if tipo_procesamiento == 'rapida':
             ruta_txt = os.path.join(temp_dir, "transcripcion_rapida.txt")
             with open(ruta_txt, "w", encoding="utf-8") as f:
-                f.write(transcripcion)
+                f.write(texto_crudo)
             return send_file(ruta_txt, as_attachment=True)
             
         else:
-            # --- MOTOR AVANZADO (OpenAI 120B con Voces) ---
-            temp_docx_path = os.path.join(temp_dir, "transcripcion_voces.docx")
-            chunk_pattern = os.path.join(temp_dir, "chunk_%03d.mp3")
-            
-            subprocess.run([
-                "ffmpeg", "-y", "-i", ruta_audio,
-                "-f", "segment", "-segment_time", "600",
-                "-c:a", "libmp3lame", chunk_pattern
-            ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            
-            texto_crudo = ""
-            chunks_generados = sorted(glob.glob(os.path.join(temp_dir, "chunk_*.mp3")))
-            for chunk_path in chunks_generados:
-                with open(chunk_path, "rb") as af:
-                    t = client.audio.transcriptions.create(
-                        file=(os.path.basename(chunk_path), af.read()),
-                        model="whisper-large-v3",
-                        response_format="text"
-                    )
-                texto_crudo += t + "\n"
-                os.remove(chunk_path)
-                
             prompt_sistema = (
                 "Eres un asistente experto. Toma el texto y dale formato separando a los diferentes hablantes. "
                 "Deduce los cambios de turno. Devuelve únicamente la conversación formateada."
@@ -75,6 +68,7 @@ def transcribir():
                 temperature=0.2,
             )
             
+            temp_docx_path = os.path.join(temp_dir, "transcripcion_voces.docx")
             doc = Document()
             doc.add_heading('Transcripción con Voces', 0)
             for linea in chat_completion.choices[0].message.content.split('\n'):
