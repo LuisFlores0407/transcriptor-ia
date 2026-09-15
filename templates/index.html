@@ -3,25 +3,30 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Transcriptor de Audio a Word</title>
+    <title>Transcriptor IA Profesional</title>
     <style>
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; text-align: center; background-color: #f0f2f5; margin-top: 50px; }
-        .container { background: white; padding: 40px; border-radius: 12px; box-shadow: 0px 4px 15px rgba(0,0,0,0.1); display: inline-block; }
-        h1 { color: #333; }
-        button { background-color: #007bff; color: white; border: none; padding: 12px 24px; border-radius: 6px; cursor: pointer; font-size: 16px; margin-top: 20px; font-weight: bold;}
-        button:hover { background-color: #0056b3; }
-        input[type="file"] { margin-top: 20px; font-size: 15px; }
+        body { font-family: Arial, sans-serif; text-align: center; margin-top: 40px; background-color: #f0f2f5; }
+        .caja { background: white; padding: 30px; border-radius: 10px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); display: inline-block; max-width: 90%; }
+        input, select, button { margin: 15px 0; padding: 12px; width: 100%; box-sizing: border-box; font-size: 16px; }
+        button { background-color: #28a745; color: white; border: none; border-radius: 5px; font-weight: bold; cursor: pointer; }
+        button:hover { background-color: #218838; }
+        .nota { font-size: 13px; color: #666; text-align: left; margin-top: -5px; margin-bottom: 15px; display: block;}
     </style>
 </head>
 <body>
-    <div class="container">
-        <h1>Transcriptor de Audio 🎙️</h1>
-        <p>Sube tu nota de voz o archivo MP3 y obtén un Word al instante.</p>
-        
-        <form action="/transcribe" method="post" enctype="multipart/form-data">
-            <input type="file" name="audio_file" accept="audio/*" required>
-            <br>
-            <button type="submit">Transcribir y descargar Word</button>
+    <div class="caja">
+        <h2>Transcriptor de Audios IA</h2>
+        <form action="/transcribir" method="post" enctype="multipart/form-data">
+            
+            <input type="file" name="audio" accept="audio/*,video/*" required>
+            
+            <select name="tipo">
+                <option value="rapida">⚡ Modo Rápido (Texto corrido en TXT)</option>
+                <option value="voces">🗣️ Modo Avanzado (Separar voces en Word)</option>
+            </select>
+            <span class="nota">*El modo avanzado puede tardar un par de minutos según el tamaño del audio.</span>
+
+            <button type="submit">Iniciar Procesamiento</button>
         </form>
     </div>
 </body>
