@@ -29,7 +29,7 @@ def transcribir():
     archivo.save(ruta_audio)
 
     try:
-        # --- PASO 1: PICAR EL AUDIO SIEMPRE (Evita el Error 413) ---
+        # Picar el audio (para ambos modos)
         chunk_pattern = os.path.join(temp_dir, "chunk_%03d.mp3")
         subprocess.run([
             "ffmpeg", "-y", "-i", ruta_audio,
@@ -37,7 +37,7 @@ def transcribir():
             "-c:a", "libmp3lame", chunk_pattern
         ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         
-        # --- PASO 2: OBTENER EL TEXTO BASE DE TODOS LOS PEDAZOS ---
+        # Transcripción con Whisper (para ambos modos)
         texto_crudo = ""
         chunks_generados = sorted(glob.glob(os.path.join(temp_dir, "chunk_*.mp3")))
         for chunk_path in chunks_generados:
@@ -50,13 +50,17 @@ def transcribir():
             texto_crudo += t + "\n"
             os.remove(chunk_path)
 
-        # --- PASO 3: ENTREGAR SEGÚN EL MODO ELEGIDO ---
+        # MODO RÁPIDO: Ahora crea un archivo Word (.docx)
         if tipo_procesamiento == 'rapida':
-            ruta_txt = os.path.join(temp_dir, "transcripcion_rapida.txt")
-            with open(ruta_txt, "w", encoding="utf-8") as f:
-                f.write(texto_crudo)
-            return send_file(ruta_txt, as_attachment=True)
+            temp_docx_path = os.path.join(temp_dir, "transcripcion_rapida.docx")
+            doc = Document()
+            doc.add_heading('Transcripción Rápida', 0)
+            doc.add_paragraph(texto_crudo)
+            doc.save(temp_docx_path)
             
+            return send_file(temp_docx_path, as_attachment=True)
+            
+        # MODO AVANZADO: Crea un archivo Word (.docx) con voces separadas
         else:
             prompt_sistema = (
                 "Eres un asistente experto. Toma el texto y dale formato separando a los diferentes hablantes. "
