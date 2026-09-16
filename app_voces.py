@@ -29,7 +29,7 @@ def transcribir():
     archivo.save(ruta_audio)
 
     try:
-        # Picar el audio (para ambos modos)
+        # Picar el audio (para todos los modos)
         chunk_pattern = os.path.join(temp_dir, "chunk_%03d.mp3")
         subprocess.run([
             "ffmpeg", "-y", "-i", ruta_audio,
@@ -37,7 +37,7 @@ def transcribir():
             "-c:a", "libmp3lame", chunk_pattern
         ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         
-        # Transcripción con Whisper (para ambos modos)
+        # Transcripción cruda con Whisper
         texto_crudo = ""
         chunks_generados = sorted(glob.glob(os.path.join(temp_dir, "chunk_*.mp3")))
         for chunk_path in chunks_generados:
@@ -50,31 +50,41 @@ def transcribir():
             texto_crudo += t + "\n"
             os.remove(chunk_path)
 
-        # MODO RÁPIDO: Ahora crea un archivo Word (.docx)
+        # MODO 1: RÁPIDO
         if tipo_procesamiento == 'rapida':
             temp_docx_path = os.path.join(temp_dir, "transcripcion_rapida.docx")
             doc = Document()
             doc.add_heading('Transcripción Rápida', 0)
             doc.add_paragraph(texto_crudo)
             doc.save(temp_docx_path)
-            
             return send_file(temp_docx_path, as_attachment=True)
             
-        # MODO AVANZADO: Crea un archivo Word (.docx) con voces separadas
+        # MODOS 2 y 3: VOCES o PROFESIONAL
         else:
-            prompt_sistema = (
-                "Eres un asistente experto. Toma el texto y dale formato separando a los diferentes hablantes. "
-                "Deduce los cambios de turno. Devuelve únicamente la conversación formateada."
-            )
+            if tipo_procesamiento == 'voces':
+                prompt_sistema = (
+                    "Eres un asistente experto. Toma el texto y dale formato separando a los diferentes hablantes. "
+                    "Deduce los cambios de turno. Devuelve únicamente la conversación formateada."
+                )
+            else: # modo 'profesional'
+                prompt_sistema = (
+                    "Eres un asistente experto en transcripción y redacción. Toma el texto crudo y sepáralo por hablantes. "
+                    "Además, debes corregir cualquier error para que cada oración tenga sentido lógico y coherencia. "
+                    "Transforma cualquier lenguaje vulgar, coloquial o insultos en un lenguaje estrictamente formal y profesional, "
+                    "manteniendo el mensaje original pero elevando el tono. Devuelve únicamente la conversación formateada."
+                )
+
             chat_completion = client.chat.completions.create(
                 messages=[{"role": "system", "content": prompt_sistema}, {"role": "user", "content": texto_crudo}],
                 model="openai/gpt-oss-120b",
                 temperature=0.2,
             )
             
-            temp_docx_path = os.path.join(temp_dir, "transcripcion_voces.docx")
+            temp_docx_path = os.path.join(temp_dir, f"transcripcion_{tipo_procesamiento}.docx")
             doc = Document()
-            doc.add_heading('Transcripción con Voces', 0)
+            titulo = 'Transcripción con Voces' if tipo_procesamiento == 'voces' else 'Transcripción Profesional'
+            doc.add_heading(titulo, 0)
+            
             for linea in chat_completion.choices[0].message.content.split('\n'):
                 if linea.strip():
                     doc.add_paragraph(linea)
