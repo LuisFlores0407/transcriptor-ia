@@ -1,6 +1,6 @@
 flask
 groq
 python-docx
-yt-dlp
 gdown
 reportlab
+pytubefix
