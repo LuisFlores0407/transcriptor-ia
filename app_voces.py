@@ -73,11 +73,19 @@ def descargar_archivo(task_id):
     return "El archivo no está listo o hubo un error", 400
 
 def limpiar_texto(texto):
-    """Filtro estricto para eliminar formatos raros que rompen el PDF"""
-    texto_limpio = texto.replace('**', '').replace('##', '').replace('*', '-')
-    texto_limpio = texto_limpio.replace('\xa0', ' ').replace('\u202f', ' ').replace('\u200b', '')
-    texto_limpio = texto_limpio.replace('“', '"').replace('”', '"').replace("'", "'").replace('—', '-')
-    return texto_limpio
+    """Traduce caracteres incompatibles con el PDF a texto plano estándar."""
+    if not texto:
+        return ""
+    # Reemplazar viñetas y guiones raros por guiones simples
+    reemplazos = {
+        '•': '-', '·': '-', '⁃': '-', '–': '-', '—': '-',
+        '“': '"', '”': '"', '‘': "'", '’': "'",
+        '**': '', '##': '', '*': '-',
+        '\xa0': ' ', '\u202f': ' ', '\u200b': ''
+    }
+    for mal, bien in reemplazos.items():
+        texto = texto.replace(mal, bien)
+    return texto
 
 def procesar_en_fondo(task_id, ruta_original, tipo_procesamiento, formato):
     try:
@@ -163,27 +171,28 @@ def procesar_en_fondo(task_id, ruta_original, tipo_procesamiento, formato):
             ESTADOS_TAREAS[task_id]['estado'] = 'Pensando... Aplicando Inteligencia Artificial...'
             ESTADOS_TAREAS[task_id]['progreso'] = 75
             
+            # Instrucciones positivas para evitar que el modelo devuelva un documento vacío
             if tipo_procesamiento == 'voces':
-                prompt = "Eres un transcriptor experto. Toma el texto crudo y sepáralo por hablantes. REGLA ESTRICTA: Agrupa las intervenciones continuas de la misma persona. NO pongas un minuto por cada oración. Si una persona habla sin interrupción, agrupa su texto y pon el intervalo de tiempo al inicio (Ejemplo: [01:15 - 03:20] Hablante 1: texto continuo). Escribe estrictamente en TEXTO PLANO sin usar asteriscos ni formato Markdown."
+                prompt = "Instrucciones: 1. Lee el texto con marcas de tiempo. 2. Identifica a los diferentes hablantes. 3. Agrupa las frases continuas de una misma persona en un solo párrafo. 4. Indica el tiempo de inicio y fin de esa intervención. Ejemplo: '[00:10 - 01:25] Hablante 1: Hola, ¿cómo estás?'. 5. Devuelve únicamente la transcripción formateada, sin texto adicional."
             elif tipo_procesamiento == 'profesional':
-                prompt = "Eres un asistente ejecutivo. Toma el texto crudo, sepáralo por hablantes agrupando sus intervenciones continuas bajo un único intervalo de tiempo (Ejemplo: [01:15 - 03:20] Hablante 1: texto). Corrige cualquier lenguaje vulgar o coloquial pasándolo a un registro profesional. Escribe estrictamente en TEXTO PLANO sin usar asteriscos ni formato Markdown."
+                prompt = "Instrucciones: 1. Lee el texto con marcas de tiempo. 2. Agrupa las frases de un mismo hablante e indica el intervalo de tiempo (Ejemplo: '[00:10 - 01:25] Hablante 1: texto'). 3. Corrige la gramática y transforma cualquier lenguaje informal en un registro profesional. 4. Devuelve únicamente la transcripción mejorada."
             elif tipo_procesamiento == 'resumen':
-                prompt = "Eres un analista experto. Elabora un informe analítico detallado y claro sobre los temas del audio. REGLA ESTRICTA: Escribe única y exclusivamente en TEXTO PLANO. Prohibido usar formato Markdown, prohibido usar asteriscos, prohibido usar tablas. Usa guiones simples (-) para hacer listas si es necesario. Redacta párrafos limpios."
+                prompt = "Instrucciones: Elabora un informe analítico detallado sobre los temas del audio. Utiliza únicamente guiones simples (-) para hacer listas. Estructura la información de forma clara y profesional. No utilices asteriscos, ni viñetas especiales."
             elif tipo_procesamiento == 'traduccion':
-                prompt = "Eres un traductor experto. Traduce todo al Español Latino, agrupa a los hablantes con intervalos de tiempo (Ejemplo: [00:10 - 01:20] Hablante 1: texto). Escribe en TEXTO PLANO sin asteriscos."
+                prompt = "Instrucciones: Traduce el siguiente texto al Español Latino. Agrupa a los hablantes con sus intervalos de tiempo correspondientes (Ejemplo: '[00:10 - 01:25] Hablante 1: texto'). Devuelve únicamente la traducción."
             
             texto_base = texto_crudo_sin if tipo_procesamiento == 'resumen' else texto_crudo_con
 
             chat_completion = client.chat.completions.create(
                 messages=[{"role": "system", "content": prompt}, {"role": "user", "content": texto_base}],
                 model="openai/gpt-oss-120b",
-                temperature=0.1, 
+                temperature=0.2, 
             )
             texto_final = chat_completion.choices[0].message.content
 
         if ESTADOS_TAREAS[task_id].get('cancelado'): return
 
-        # Limpiar cualquier mugre o símbolo raro que la IA haya intentado colar
+        # Limpiar texto para evitar fallos en ReportLab
         texto_final = limpiar_texto(texto_final)
 
         # PASO 5: EXPORTAR DOCUMENTO
