@@ -147,8 +147,8 @@ def procesar_en_fondo(task_id, ruta_original, tipo_procesamiento, formato):
                     }
                     
                     exito_descarga = False
-                    # Bucle de reintentos: 6 intentos con 5 segundos de espera entre ellos
-                    for intento in range(6):
+                    # Bucle aumentado a 24 intentos (2 minutos de espera) para videos largos
+                    for intento in range(24):
                         if ESTADOS_TAREAS[task_id].get('cancelado'): return
                         
                         mp3_response = requests.get(link_descarga, headers=headers_descarga, stream=True)
@@ -162,13 +162,13 @@ def procesar_en_fondo(task_id, ruta_original, tipo_procesamiento, formato):
                             exito_descarga = True
                             break
                         elif mp3_response.status_code == 404:
-                            ESTADOS_TAREAS[task_id]['estado'] = f'La API está convirtiendo el video. Reintentando ({intento+1}/6)...'
+                            ESTADOS_TAREAS[task_id]['estado'] = f'Convirtiendo video largo (puede demorar). Intento {intento+1}/24...'
                             time.sleep(5)
                         else:
                             raise Exception(f"El enlace generado falló (Error HTTP {mp3_response.status_code}).")
                             
                     if not exito_descarga:
-                        raise Exception("La API externa falló permanentemente (Error 404 continuo). El servidor de la API puede estar caído.")
+                        raise Exception("La API externa rechazó el video. Es casi seguro que superó el límite de tiempo máximo de su plan gratuito.")
                 else:
                     mensaje_error = data.get('msg') or data.get('message') or str(data)
                     raise Exception(f"Bloqueo de la API: {mensaje_error}")
