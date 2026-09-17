@@ -123,7 +123,6 @@ def procesar_en_fondo(task_id, ruta_original, tipo_procesamiento, formato):
                 if not vid_id:
                     raise Exception("No se pudo extraer el ID del video.")
                 
-                # Nueva URL estructurada dinámicamente con el ID del video
                 url_api = f"https://youtube-mp3-audio-video-downloader.p.rapidapi.com/get_m4a_download_link/{vid_id}"
                 headers_api = {
                     "x-rapidapi-key": "f9360969e7mshc8ebde93e605964p101a53jsnb3505afe1fc2",
@@ -137,11 +136,11 @@ def procesar_en_fondo(task_id, ruta_original, tipo_procesamiento, formato):
                 except Exception:
                     raise Exception(f"La API no respondió correctamente (Código {response.status_code}).")
                 
-                # Búsqueda ampliada del enlace de descarga
-                link_descarga = data.get('link') or data.get('url') or data.get('downloadUrl') or data.get('download_link')
+                # Radar actualizado para capturar las llaves 'file' o 'reserved_file' de Spicy-Laika
+                link_descarga = data.get('file') or data.get('reserved_file') or data.get('link') or data.get('url') or data.get('downloadUrl')
                 
                 if link_descarga:
-                    ESTADOS_TAREAS[task_id]['estado'] = 'Esperando a que la API procese el audio...'
+                    ESTADOS_TAREAS[task_id]['estado'] = 'Descargando el audio procesado...'
                     
                     headers_descarga = {
                         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36"
@@ -154,7 +153,6 @@ def procesar_en_fondo(task_id, ruta_original, tipo_procesamiento, formato):
                         mp3_response = requests.get(link_descarga, headers=headers_descarga, stream=True)
                         
                         if mp3_response.status_code == 200:
-                            # Esta API descarga m4a, ffmpeg lo lee sin problemas
                             ruta_descarga = os.path.join(temp_dir, f"yt_{task_id}.m4a")
                             with open(ruta_descarga, 'wb') as f:
                                 for chunk in mp3_response.iter_content(chunk_size=8192):
