@@ -37,15 +37,18 @@ def transcribir():
                 if not os.path.exists(ruta_archivo):
                     return "Error descargando de Drive. ¿Está Público?", 400
             else:
+                # --- AQUÍ ESTÁ EL DISFRAZ ANTI-BOTS PARA YOUTUBE ---
                 ydl_opts = {
                     'format': 'bestaudio/best',
                     'outtmpl': os.path.join(temp_dir, 'yt_audio.%(ext)s'),
                     'postprocessors': [{'key': 'FFmpegExtractAudio', 'preferredcodec': 'mp3', 'preferredquality': '192'}],
-                    'quiet': True
+                    'quiet': True,
+                    'extractor_args': {'youtube': {'player_client': ['android']}} # Simulamos ser un celular
                 }
                 with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                     ydl.download([enlace])
                 ruta_archivo = os.path.join(temp_dir, 'yt_audio.mp3')
+                
         elif 'archivo_subido' in request.files and request.files['archivo_subido'].filename != '':
             archivo = request.files['archivo_subido']
             ruta_archivo = os.path.join(temp_dir, archivo.filename)
@@ -74,7 +77,7 @@ def transcribir():
                     response_format="verbose_json"
                 )
                 
-                # Extraer segmentos precisos
+                # Extraer segmentos
                 segments = getattr(t, 'segments', [])
                 if not segments and isinstance(t, dict):
                     segments = t.get('segments', [])
@@ -110,7 +113,6 @@ def transcribir():
             elif tipo_procesamiento == 'traduccion':
                 prompt = "Eres un traductor experto. Este texto está en un idioma extranjero e incluye marcas de tiempo. Traduce absolutamente todo al Español Latino. Separa a los diferentes hablantes y conserva las marcas de tiempo (ej: [01:15]) en las intervenciones."
             
-            # El resumen procesa mejor sin los números de los minutos distrayéndolo
             texto_base = texto_crudo_sin if tipo_procesamiento == 'resumen' else texto_crudo_con
 
             chat_completion = client.chat.completions.create(
@@ -130,7 +132,6 @@ def transcribir():
             
             for linea in texto_final.split('\n'):
                 if linea.strip():
-                    # Escapamos caracteres para que el PDF no falle con emojis o símbolos raros
                     linea_limpia = escape(linea.encode('latin-1', 'replace').decode('latin-1'))
                     historia.append(Paragraph(linea_limpia, estilos['Normal']))
                     historia.append(Spacer(1, 6))
