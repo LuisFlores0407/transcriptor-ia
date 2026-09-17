@@ -6,6 +6,7 @@ import threading
 import uuid
 import re
 import requests
+import time
 from flask import Flask, render_template, request, send_file, jsonify
 from groq import Groq
 from docx import Document
@@ -139,23 +140,35 @@ def procesar_en_fondo(task_id, ruta_original, tipo_procesamiento, formato):
                 link_descarga = data.get('link') or data.get('url') or data.get('downloadUrl')
                 
                 if link_descarga:
-                    ESTADOS_TAREAS[task_id]['estado'] = 'Descargando audio procesado...'
+                    ESTADOS_TAREAS[task_id]['estado'] = 'Esperando a que la API procese el audio...'
                     
-                    # Disfraz para evitar bloqueos del servidor que aloja el MP3
                     headers_descarga = {
                         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36"
                     }
                     
-                    mp3_response = requests.get(link_descarga, headers=headers_descarga, stream=True)
-                    
-                    if mp3_response.status_code == 200:
-                        ruta_descarga = os.path.join(temp_dir, f"yt_{task_id}.mp3")
-                        with open(ruta_descarga, 'wb') as f:
-                            for chunk in mp3_response.iter_content(chunk_size=8192):
-                                if chunk: f.write(chunk)
-                        ruta_audio = ruta_descarga
-                    else:
-                        raise Exception(f"El enlace generado falló (Error HTTP {mp3_response.status_code}).")
+                    exito_descarga = False
+                    # Bucle de reintentos: 6 intentos con 5 segundos de espera entre ellos
+                    for intento in range(6):
+                        if ESTADOS_TAREAS[task_id].get('cancelado'): return
+                        
+                        mp3_response = requests.get(link_descarga, headers=headers_descarga, stream=True)
+                        
+                        if mp3_response.status_code == 200:
+                            ruta_descarga = os.path.join(temp_dir, f"yt_{task_id}.mp3")
+                            with open(ruta_descarga, 'wb') as f:
+                                for chunk in mp3_response.iter_content(chunk_size=8192):
+                                    if chunk: f.write(chunk)
+                            ruta_audio = ruta_descarga
+                            exito_descarga = True
+                            break
+                        elif mp3_response.status_code == 404:
+                            ESTADOS_TAREAS[task_id]['estado'] = f'La API está convirtiendo el video. Reintentando ({intento+1}/6)...'
+                            time.sleep(5)
+                        else:
+                            raise Exception(f"El enlace generado falló (Error HTTP {mp3_response.status_code}).")
+                            
+                    if not exito_descarga:
+                        raise Exception("La API externa falló permanentemente (Error 404 continuo). El servidor de la API puede estar caído.")
                 else:
                     mensaje_error = data.get('msg') or data.get('message') or str(data)
                     raise Exception(f"Bloqueo de la API: {mensaje_error}")
