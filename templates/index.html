@@ -26,7 +26,7 @@
     <div class="caja">
         <h2>Transcriptor y Analista IA</h2>
         
-        <form id="formulario" action="/transcribir" method="post" enctype="multipart/form-data">
+        <form id="formulario" enctype="multipart/form-data">
             
             <input type="file" id="input-archivo" name="archivo_subido" accept="audio/*,video/*">
             <span class="nota">*Sube un archivo local. (Desactiva el enlace)</span>
@@ -46,20 +46,20 @@
                 <option value="traduccion">🌍 Traductor Universal (Traducir a Esp Latino + Voces)</option>
             </select>
 
-            <select name="formato">
+            <select name="formato" id="formato-descarga">
                 <option value="docx">📄 Descargar como Word (.docx)</option>
                 <option value="pdf">📕 Descargar como PDF (.pdf)</option>
             </select>
 
-            <button type="submit">Iniciar Procesamiento Automático</button>
+            <button type="submit" id="btn-submit">Iniciar Procesamiento Automático</button>
         </form>
 
-        <!-- Pantalla de carga que reemplaza al formulario -->
+        <!-- Pantalla de carga -->
         <div id="pantalla-carga">
             <div class="spinner"></div>
             <div class="texto-carga">Procesando con Inteligencia Artificial...</div>
             <div class="tiempo-carga" id="cronometro">Tiempo transcurrido: 00:00</div>
-            <p class="nota" style="text-align: center; margin-top: 15px;">Por favor, no cierres esta pestaña. La descarga comenzará automáticamente cuando termine.</p>
+            <p class="nota" style="text-align: center; margin-top: 15px;">La descarga comenzará automáticamente. Por favor, espera sin cerrar la pestaña.</p>
         </div>
     </div>
 
@@ -69,12 +69,13 @@
         const formulario = document.getElementById('formulario');
         const pantallaCarga = document.getElementById('pantalla-carga');
         const cronometro = document.getElementById('cronometro');
+        const formatoDescarga = document.getElementById('formato-descarga');
 
-        // Lógica para bloquear campos mutuamente
+        // Lógica para bloquear los campos mutuamente
         inputArchivo.addEventListener('change', function() {
             if (this.value) {
                 inputEnlace.disabled = true;
-                inputEnlace.value = ''; // Limpia el enlace si había uno
+                inputEnlace.value = ''; 
             } else {
                 inputEnlace.disabled = false;
             }
@@ -83,24 +84,74 @@
         inputEnlace.addEventListener('input', function() {
             if (this.value.trim() !== '') {
                 inputArchivo.disabled = true;
-                inputArchivo.value = ''; // Limpia el archivo si había uno
+                inputArchivo.value = ''; 
             } else {
                 inputArchivo.disabled = false;
             }
         });
 
-        // Lógica para mostrar la pantalla de carga y el cronómetro
-        formulario.addEventListener('submit', function() {
+        // Lógica AJAX para procesar y descargar restaurando la pantalla
+        formulario.addEventListener('submit', async function(e) {
+            e.preventDefault(); // Evita recargar la página
+            
+            if (!inputArchivo.value && !inputEnlace.value.trim()) {
+                alert("Por favor, sube un archivo o pega un enlace.");
+                return;
+            }
+
+            // Ocultar formulario, mostrar carga
             formulario.style.display = 'none';
             pantallaCarga.style.display = 'block';
             
             let segundos = 0;
-            setInterval(function() {
+            let intervalo = setInterval(function() {
                 segundos++;
                 let mins = Math.floor(segundos / 60).toString().padStart(2, '0');
                 let secs = (segundos % 60).toString().padStart(2, '0');
                 cronometro.innerText = `Tiempo transcurrido: ${mins}:${secs}`;
             }, 1000);
+
+            try {
+                let formData = new FormData(formulario);
+                let respuesta = await fetch('/transcribir', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (respuesta.ok) {
+                    let blob = await respuesta.blob();
+                    let url = window.URL.createObjectURL(blob);
+                    let a = document.createElement('a');
+                    a.href = url;
+                    
+                    // Obtener nombre del archivo del servidor
+                    let nombreArchivo = "transcripcion." + formatoDescarga.value;
+                    let disposicion = respuesta.headers.get('Content-Disposition');
+                    if (disposicion && disposicion.indexOf('attachment') !== -1) {
+                        let matches = /filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/.exec(disposicion);
+                        if (matches != null && matches[1]) { 
+                            nombreArchivo = matches[1].replace(/['"]/g, '');
+                        }
+                    }
+                    
+                    a.download = nombreArchivo;
+                    document.body.appendChild(a);
+                    a.click();
+                    a.remove();
+                    window.URL.revokeObjectURL(url);
+                } else {
+                    let errorTexto = await respuesta.text();
+                    alert("Error procesando: " + errorTexto);
+                }
+            } catch (error) {
+                alert("Ocurrió un error de conexión.");
+            } finally {
+                // Al terminar (éxito o error), restaurar la pantalla
+                clearInterval(intervalo);
+                formulario.style.display = 'block';
+                pantallaCarga.style.display = 'none';
+                cronometro.innerText = 'Tiempo transcurrido: 00:00';
+            }
         });
     </script>
 </body>
