@@ -116,28 +116,29 @@ def procesar_en_fondo(task_id, ruta_original, tipo_procesamiento, formato):
                 ruta_audio = ruta_descarga
                 
             elif 'youtube.com' in ruta_original or 'youtu.be' in ruta_original:
-                ESTADOS_TAREAS[task_id]['estado'] = 'Conectando con servidor externo para YouTube...'
+                ESTADOS_TAREAS[task_id]['estado'] = 'Conectando con Spicy-Laika para YouTube...'
                 ESTADOS_TAREAS[task_id]['progreso'] = 10
                 
                 vid_id = extraer_id_youtube(ruta_original)
                 if not vid_id:
                     raise Exception("No se pudo extraer el ID del video.")
                 
-                url_api = "https://youtube-mp36.p.rapidapi.com/dl"
-                querystring = {"id": vid_id}
+                # Nueva URL estructurada dinámicamente con el ID del video
+                url_api = f"https://youtube-mp3-audio-video-downloader.p.rapidapi.com/get_m4a_download_link/{vid_id}"
                 headers_api = {
                     "x-rapidapi-key": "f9360969e7mshc8ebde93e605964p101a53jsnb3505afe1fc2",
-                    "x-rapidapi-host": "youtube-mp36.p.rapidapi.com"
+                    "x-rapidapi-host": "youtube-mp3-audio-video-downloader.p.rapidapi.com"
                 }
                 
-                response = requests.get(url_api, headers=headers_api, params=querystring)
+                response = requests.get(url_api, headers=headers_api)
                 
                 try:
                     data = response.json()
                 except Exception:
                     raise Exception(f"La API no respondió correctamente (Código {response.status_code}).")
                 
-                link_descarga = data.get('link') or data.get('url') or data.get('downloadUrl')
+                # Búsqueda ampliada del enlace de descarga
+                link_descarga = data.get('link') or data.get('url') or data.get('downloadUrl') or data.get('download_link')
                 
                 if link_descarga:
                     ESTADOS_TAREAS[task_id]['estado'] = 'Esperando a que la API procese el audio...'
@@ -147,28 +148,28 @@ def procesar_en_fondo(task_id, ruta_original, tipo_procesamiento, formato):
                     }
                     
                     exito_descarga = False
-                    # Bucle aumentado a 24 intentos (2 minutos de espera) para videos largos
                     for intento in range(24):
                         if ESTADOS_TAREAS[task_id].get('cancelado'): return
                         
                         mp3_response = requests.get(link_descarga, headers=headers_descarga, stream=True)
                         
                         if mp3_response.status_code == 200:
-                            ruta_descarga = os.path.join(temp_dir, f"yt_{task_id}.mp3")
+                            # Esta API descarga m4a, ffmpeg lo lee sin problemas
+                            ruta_descarga = os.path.join(temp_dir, f"yt_{task_id}.m4a")
                             with open(ruta_descarga, 'wb') as f:
                                 for chunk in mp3_response.iter_content(chunk_size=8192):
                                     if chunk: f.write(chunk)
                             ruta_audio = ruta_descarga
                             exito_descarga = True
                             break
-                        elif mp3_response.status_code == 404:
-                            ESTADOS_TAREAS[task_id]['estado'] = f'Convirtiendo video largo (puede demorar). Intento {intento+1}/24...'
+                        elif mp3_response.status_code in [404, 403]:
+                            ESTADOS_TAREAS[task_id]['estado'] = f'Convirtiendo video (puede demorar). Intento {intento+1}/24...'
                             time.sleep(5)
                         else:
                             raise Exception(f"El enlace generado falló (Error HTTP {mp3_response.status_code}).")
                             
                     if not exito_descarga:
-                        raise Exception("La API externa rechazó el video. Es casi seguro que superó el límite de tiempo máximo de su plan gratuito.")
+                        raise Exception("La API externa rechazó el video. Posible límite de tiempo de su plan gratuito.")
                 else:
                     mensaje_error = data.get('msg') or data.get('message') or str(data)
                     raise Exception(f"Bloqueo de la API: {mensaje_error}")
