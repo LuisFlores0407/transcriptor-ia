@@ -38,9 +38,9 @@
             </div>
             <span class="nota">*Sube un archivo de Audio o Video local.</span>
             
-            <div class="divisor">--- O PEGÁ UN ENLACE DE DRIVE ---</div>
+            <div class="divisor">--- O PEGÁ UN ENLACE ---</div>
             
-            <input type="url" id="input-enlace" name="enlace" placeholder="Enlace de Google Drive (Público)...">
+            <input type="url" id="input-enlace" name="enlace" placeholder="Enlace de YouTube o Google Drive...">
             <span class="nota">*Pegar un enlace desactiva la subida de archivo.</span>
             
             <div class="divisor">--- CONFIGURACIÓN ---</div>
@@ -88,7 +88,6 @@
         let currentTaskId = null;
         let tiempoSegundos = 0;
 
-        // Mostrar botón de limpiar y desactivar enlace
         inputArchivo.addEventListener('change', function() {
             if (this.value) { 
                 inputEnlace.disabled = true; 
@@ -100,14 +99,12 @@
             }
         });
 
-        // Limpiar archivo
         btnLimpiar.addEventListener('click', function() {
             inputArchivo.value = '';
             inputEnlace.disabled = false;
             btnLimpiar.style.display = 'none';
         });
 
-        // Desactivar archivo si hay enlace
         inputEnlace.addEventListener('input', function() {
             if (this.value.trim() !== '') { 
                 inputArchivo.disabled = true; 
@@ -148,7 +145,7 @@
             e.preventDefault();
             
             if (!inputArchivo.value && !inputEnlace.value.trim()) {
-                alert("Sube un archivo o pega un enlace de Drive.");
+                alert("Sube un archivo o pega un enlace de YouTube o Drive.");
                 return;
             }
 
