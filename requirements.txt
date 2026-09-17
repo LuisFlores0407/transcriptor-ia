@@ -1,4 +1,6 @@
 flask
 groq
 python-docx
-python-dotenv
+yt-dlp
+gdown
+reportlab
