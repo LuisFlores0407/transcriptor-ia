@@ -4,11 +4,12 @@ import subprocess
 import glob
 import threading
 import uuid
+import re
+import requests
 from flask import Flask, render_template, request, send_file, jsonify
 from groq import Groq
 from docx import Document
 import gdown
-from pytubefix import YouTube
 from reportlab.lib.pagesizes import letter
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
 from reportlab.lib.styles import getSampleStyleSheet
@@ -75,8 +76,6 @@ def descargar_archivo(task_id):
 def limpiar_texto(texto):
     """Filtro de seguridad estricto para PDF."""
     if not texto: return ""
-    
-    # Limpia viñetas, guiones largos y formatos markdown persistentes
     reemplazos = {
         '•': '-', '·': '-', '⁃': '-', '–': '-', '—': '-', '−': '-', '―': '-',
         '“': '"', '”': '"', '‘': "'", '’': "'",
@@ -86,7 +85,6 @@ def limpiar_texto(texto):
     for mal, bien in reemplazos.items():
         texto = texto.replace(mal, bien)
 
-    # Verifica cada caracter. Si el PDF no puede leerlo, lo transforma en un espacio.
     texto_seguro = ""
     for char in texto:
         try:
@@ -96,6 +94,11 @@ def limpiar_texto(texto):
             texto_seguro += ' ' 
     return texto_seguro
 
+def extraer_id_youtube(url):
+    """Extrae el código único del video de cualquier enlace de YouTube"""
+    match = re.search(r"(?:v=|\/)([0-9A-Za-z_-]{11}).*", url)
+    return match.group(1) if match else None
+
 def procesar_en_fondo(task_id, ruta_original, tipo_procesamiento, formato):
     try:
         temp_dir = tempfile.gettempdir()
@@ -103,17 +106,55 @@ def procesar_en_fondo(task_id, ruta_original, tipo_procesamiento, formato):
 
         if ESTADOS_TAREAS[task_id].get('cancelado'): return
 
+        # PASO 1: DESCARGA (Drive o API YouTube)
         if ruta_original.startswith('http'):
-            ESTADOS_TAREAS[task_id]['estado'] = 'Descargando de Google Drive...'
-            ESTADOS_TAREAS[task_id]['progreso'] = 10
-            ruta_descarga = os.path.join(temp_dir, f"drive_{task_id}")
-            gdown.download(ruta_original, ruta_descarga, quiet=True)
-            if not os.path.exists(ruta_descarga):
-                raise Exception("Error en Drive. ¿Está en 'Cualquier persona con el enlace'?")
-            ruta_audio = ruta_descarga
+            if 'drive.google.com' in ruta_original:
+                ESTADOS_TAREAS[task_id]['estado'] = 'Descargando de Google Drive...'
+                ESTADOS_TAREAS[task_id]['progreso'] = 10
+                ruta_descarga = os.path.join(temp_dir, f"drive_{task_id}")
+                gdown.download(ruta_original, ruta_descarga, quiet=True)
+                if not os.path.exists(ruta_descarga):
+                    raise Exception("Error en Drive. ¿Está en 'Cualquier persona con el enlace'?")
+                ruta_audio = ruta_descarga
+                
+            elif 'youtube.com' in ruta_original or 'youtu.be' in ruta_original:
+                ESTADOS_TAREAS[task_id]['estado'] = 'Conectando con servidor externo para YouTube...'
+                ESTADOS_TAREAS[task_id]['progreso'] = 10
+                
+                vid_id = extraer_id_youtube(ruta_original)
+                if not vid_id:
+                    raise Exception("No se pudo extraer el ID del video. Verifica el enlace.")
+                
+                url_api = "https://youtube-mp36.p.rapidapi.com/dl"
+                querystring = {"id": vid_id}
+                headers = {
+                    "x-rapidapi-key": "f9360969e7mshc8ebde93e605964p101a53jsnb3505afe1fc2",
+                    "x-rapidapi-host": "youtube-mp36.p.rapidapi.com"
+                }
+                
+                # Pedimos el archivo a RapidAPI
+                response = requests.get(url_api, headers=headers, params=querystring)
+                data = response.json()
+                
+                if response.status_code == 200 and ('link' in data or data.get('status') == 'ok'):
+                    link_descarga = data.get('link')
+                    ESTADOS_TAREAS[task_id]['estado'] = 'Descargando audio procesado...'
+                    
+                    mp3_response = requests.get(link_descarga)
+                    ruta_descarga = os.path.join(temp_dir, f"yt_{task_id}.mp3")
+                    with open(ruta_descarga, 'wb') as f:
+                        f.write(mp3_response.content)
+                        
+                    ruta_audio = ruta_descarga
+                else:
+                    error_msg = data.get('msg', 'Error desconocido')
+                    raise Exception(f"Fallo en la API de YouTube: {error_msg}")
+            else:
+                raise Exception("Enlace no soportado. Usa YouTube o Google Drive.")
 
         if ESTADOS_TAREAS[task_id].get('cancelado'): return
 
+        # PASO 2: CORTAR
         ESTADOS_TAREAS[task_id]['estado'] = 'Optimizando formato del audio...'
         ESTADOS_TAREAS[task_id]['progreso'] = 20
         chunk_pattern = os.path.join(temp_dir, f"chunk_{task_id}_%03d.mp3")
@@ -166,6 +207,7 @@ def procesar_en_fondo(task_id, ruta_original, tipo_procesamiento, formato):
 
         if ESTADOS_TAREAS[task_id].get('cancelado'): return
 
+        # PASO 4: IA AVANZADA
         titulo = 'Informe y Análisis' if tipo_procesamiento == 'resumen' else 'Transcripción'
 
         if tipo_procesamiento == 'rapida':
@@ -198,6 +240,7 @@ def procesar_en_fondo(task_id, ruta_original, tipo_procesamiento, formato):
 
         texto_final = limpiar_texto(texto_final)
 
+        # PASO 5: EXPORTAR DOCUMENTO
         ESTADOS_TAREAS[task_id]['estado'] = 'Generando archivo final...'
         ESTADOS_TAREAS[task_id]['progreso'] = 95
         
