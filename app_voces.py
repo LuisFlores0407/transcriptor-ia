@@ -124,33 +124,39 @@ def procesar_en_fondo(task_id, ruta_original, tipo_procesamiento, formato):
                 
                 url_api = "https://youtube-mp36.p.rapidapi.com/dl"
                 querystring = {"id": vid_id}
-                headers = {
+                headers_api = {
                     "x-rapidapi-key": "f9360969e7mshc8ebde93e605964p101a53jsnb3505afe1fc2",
                     "x-rapidapi-host": "youtube-mp36.p.rapidapi.com"
                 }
                 
-                response = requests.get(url_api, headers=headers, params=querystring)
+                response = requests.get(url_api, headers=headers_api, params=querystring)
                 
                 try:
                     data = response.json()
                 except Exception:
                     raise Exception(f"La API no respondió correctamente (Código {response.status_code}).")
                 
-                # Buscamos el enlace en todos los formatos posibles
                 link_descarga = data.get('link') or data.get('url') or data.get('downloadUrl')
                 
                 if link_descarga:
                     ESTADOS_TAREAS[task_id]['estado'] = 'Descargando audio procesado...'
-                    mp3_response = requests.get(link_descarga)
+                    
+                    # Disfraz para evitar bloqueos del servidor que aloja el MP3
+                    headers_descarga = {
+                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36"
+                    }
+                    
+                    mp3_response = requests.get(link_descarga, headers=headers_descarga, stream=True)
+                    
                     if mp3_response.status_code == 200:
                         ruta_descarga = os.path.join(temp_dir, f"yt_{task_id}.mp3")
                         with open(ruta_descarga, 'wb') as f:
-                            f.write(mp3_response.content)
+                            for chunk in mp3_response.iter_content(chunk_size=8192):
+                                if chunk: f.write(chunk)
                         ruta_audio = ruta_descarga
                     else:
-                        raise Exception("El enlace generado por la API falló al descargar.")
+                        raise Exception(f"El enlace generado falló (Error HTTP {mp3_response.status_code}).")
                 else:
-                    # Capturamos el mensaje de error real de la API
                     mensaje_error = data.get('msg') or data.get('message') or str(data)
                     raise Exception(f"Bloqueo de la API: {mensaje_error}")
             else:
