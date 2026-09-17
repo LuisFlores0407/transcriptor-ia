@@ -3,4 +3,4 @@ groq
 python-docx
 gdown
 reportlab
-pytubefix
+requests
