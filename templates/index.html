@@ -13,8 +13,11 @@
         button:hover { background-color: #218838; }
         .btn-rojo { background-color: #dc3545; margin-top: 15px; }
         .btn-rojo:hover { background-color: #c82333; }
+        .btn-limpiar { background-color: #dc3545; width: auto; margin: 0 0 0 10px; padding: 12px 15px; display: none; }
+        .btn-limpiar:hover { background-color: #c82333; }
         .nota { font-size: 13px; color: #666; text-align: left; margin-top: -5px; margin-bottom: 15px; display: block;}
         .divisor { font-weight: bold; color: #777; margin: 10px 0; }
+        .fila-archivo { display: flex; align-items: center; justify-content: space-between; margin: 12px 0; }
         
         #pantalla-carga { display: none; text-align: center; margin-top: 20px; }
         .contenedor-barra { width: 100%; background-color: #e0e0e0; border-radius: 10px; overflow: hidden; margin-bottom: 10px; }
@@ -29,7 +32,10 @@
         
         <form id="formulario" enctype="multipart/form-data">
             
-            <input type="file" id="input-archivo" name="archivo_subido" accept="audio/*,video/*">
+            <div class="fila-archivo">
+                <input type="file" id="input-archivo" name="archivo_subido" accept="audio/*,video/*" style="margin: 0;">
+                <button type="button" id="btn-limpiar" class="btn-limpiar" title="Quitar archivo">✖</button>
+            </div>
             <span class="nota">*Sube un archivo de Audio o Video local.</span>
             
             <div class="divisor">--- O PEGÁ UN ENLACE DE DRIVE ---</div>
@@ -61,13 +67,14 @@
                 <div class="barra-progreso" id="barra"></div>
             </div>
             <div class="reloj" id="cronometro">00:00</div>
-            <p class="nota" style="text-align: center;">La IA está trabajando en segundo plano.<br>La descarga comenzará sola al llegar al 100%.</p>
+            <p class="nota" style="text-align: center;">La IA está trabajando en segundo plano.<br>Puedes cambiar de pestaña. La descarga comenzará sola al llegar al 100%.</p>
             <button type="button" id="btn-cancelar" class="btn-rojo">Cancelar y volver a pantalla principal</button>
         </div>
     </div>
 
     <script>
         const inputArchivo = document.getElementById('input-archivo');
+        const btnLimpiar = document.getElementById('btn-limpiar');
         const inputEnlace = document.getElementById('input-enlace');
         const formulario = document.getElementById('formulario');
         const pantallaCarga = document.getElementById('pantalla-carga');
@@ -81,14 +88,34 @@
         let currentTaskId = null;
         let tiempoSegundos = 0;
 
+        // Mostrar botón de limpiar y desactivar enlace
         inputArchivo.addEventListener('change', function() {
-            if (this.value) { inputEnlace.disabled = true; inputEnlace.value = ''; } 
-            else { inputEnlace.disabled = false; }
+            if (this.value) { 
+                inputEnlace.disabled = true; 
+                inputEnlace.value = ''; 
+                btnLimpiar.style.display = 'block';
+            } else { 
+                inputEnlace.disabled = false; 
+                btnLimpiar.style.display = 'none';
+            }
         });
 
+        // Limpiar archivo
+        btnLimpiar.addEventListener('click', function() {
+            inputArchivo.value = '';
+            inputEnlace.disabled = false;
+            btnLimpiar.style.display = 'none';
+        });
+
+        // Desactivar archivo si hay enlace
         inputEnlace.addEventListener('input', function() {
-            if (this.value.trim() !== '') { inputArchivo.disabled = true; inputArchivo.value = ''; } 
-            else { inputArchivo.disabled = false; }
+            if (this.value.trim() !== '') { 
+                inputArchivo.disabled = true; 
+                inputArchivo.value = ''; 
+                btnLimpiar.style.display = 'none';
+            } else { 
+                inputArchivo.disabled = false; 
+            }
         });
 
         function actualizarReloj() {
