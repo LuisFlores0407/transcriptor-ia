@@ -8,6 +8,7 @@ from flask import Flask, render_template, request, send_file, jsonify
 from groq import Groq
 from docx import Document
 import gdown
+from pytubefix import YouTube
 from reportlab.lib.pagesizes import letter
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
 from reportlab.lib.styles import getSampleStyleSheet
@@ -72,8 +73,11 @@ def descargar_archivo(task_id):
     return "El archivo no está listo o hubo un error", 400
 
 def limpiar_texto(texto):
-    """Elimina caracteres invisibles que rompen los documentos (ej. signos de interrogación)"""
-    return texto.replace('\xa0', ' ').replace('\u202f', ' ').replace('\u200b', '')
+    """Filtro estricto para eliminar formatos raros que rompen el PDF"""
+    texto_limpio = texto.replace('**', '').replace('##', '').replace('*', '-')
+    texto_limpio = texto_limpio.replace('\xa0', ' ').replace('\u202f', ' ').replace('\u200b', '')
+    texto_limpio = texto_limpio.replace('“', '"').replace('”', '"').replace("'", "'").replace('—', '-')
+    return texto_limpio
 
 def procesar_en_fondo(task_id, ruta_original, tipo_procesamiento, formato):
     try:
@@ -82,7 +86,7 @@ def procesar_en_fondo(task_id, ruta_original, tipo_procesamiento, formato):
 
         if ESTADOS_TAREAS[task_id].get('cancelado'): return
 
-        # PASO 1: DRIVE
+        # PASO 1: DESCARGA
         if ruta_original.startswith('http'):
             ESTADOS_TAREAS[task_id]['estado'] = 'Descargando de Google Drive...'
             ESTADOS_TAREAS[task_id]['progreso'] = 10
@@ -149,7 +153,6 @@ def procesar_en_fondo(task_id, ruta_original, tipo_procesamiento, formato):
         if ESTADOS_TAREAS[task_id].get('cancelado'): return
 
         # PASO 4: IA AVANZADA
-        # Lógica de títulos
         titulo = 'Informe y Análisis' if tipo_procesamiento == 'resumen' else 'Transcripción'
 
         if tipo_procesamiento == 'rapida':
@@ -161,26 +164,26 @@ def procesar_en_fondo(task_id, ruta_original, tipo_procesamiento, formato):
             ESTADOS_TAREAS[task_id]['progreso'] = 75
             
             if tipo_procesamiento == 'voces':
-                prompt = "Eres un transcriptor experto. Toma el texto, que incluye marcas de tiempo, y sepáralo por hablantes. Conserva estrictamente los minutos y segundos al inicio de cada intervención. Usa español neutro, claro y no agregues caracteres extraños. No resumas, transcribe todo."
+                prompt = "Eres un transcriptor experto. Toma el texto crudo y sepáralo por hablantes. REGLA ESTRICTA: Agrupa las intervenciones continuas de la misma persona. NO pongas un minuto por cada oración. Si una persona habla sin interrupción, agrupa su texto y pon el intervalo de tiempo al inicio (Ejemplo: [01:15 - 03:20] Hablante 1: texto continuo). Escribe estrictamente en TEXTO PLANO sin usar asteriscos ni formato Markdown."
             elif tipo_procesamiento == 'profesional':
-                prompt = "Eres un asistente ejecutivo. Toma el texto con sus marcas de tiempo, sepáralo por hablantes y corrige lenguaje vulgar o coloquial pasándolo a un registro formal. Conserva los minutos. Usa español neutro, claro y sin caracteres extraños."
+                prompt = "Eres un asistente ejecutivo. Toma el texto crudo, sepáralo por hablantes agrupando sus intervenciones continuas bajo un único intervalo de tiempo (Ejemplo: [01:15 - 03:20] Hablante 1: texto). Corrige cualquier lenguaje vulgar o coloquial pasándolo a un registro profesional. Escribe estrictamente en TEXTO PLANO sin usar asteriscos ni formato Markdown."
             elif tipo_procesamiento == 'resumen':
-                prompt = "Eres un analista experto. Toma el texto crudo y elabora un informe analítico sumamente interesante y detallado. Estructura el documento de forma clara, destacando los temas y puntos principales que se abordan en el audio, acompañados de un buen análisis de contenido. Usa español claro y sin caracteres especiales extraños."
+                prompt = "Eres un analista experto. Elabora un informe analítico detallado y claro sobre los temas del audio. REGLA ESTRICTA: Escribe única y exclusivamente en TEXTO PLANO. Prohibido usar formato Markdown, prohibido usar asteriscos, prohibido usar tablas. Usa guiones simples (-) para hacer listas si es necesario. Redacta párrafos limpios."
             elif tipo_procesamiento == 'traduccion':
-                prompt = "Eres un traductor experto. Traduce todo al Español Latino. Separa a los diferentes hablantes y conserva las marcas de tiempo. Usa un lenguaje natural y sin caracteres especiales extraños."
+                prompt = "Eres un traductor experto. Traduce todo al Español Latino, agrupa a los hablantes con intervalos de tiempo (Ejemplo: [00:10 - 01:20] Hablante 1: texto). Escribe en TEXTO PLANO sin asteriscos."
             
             texto_base = texto_crudo_sin if tipo_procesamiento == 'resumen' else texto_crudo_con
 
             chat_completion = client.chat.completions.create(
                 messages=[{"role": "system", "content": prompt}, {"role": "user", "content": texto_base}],
                 model="openai/gpt-oss-120b",
-                temperature=0.1, # Temperatura reducida para evitar alucinaciones
+                temperature=0.1, 
             )
             texto_final = chat_completion.choices[0].message.content
 
         if ESTADOS_TAREAS[task_id].get('cancelado'): return
 
-        # Limpieza de caracteres problemáticos
+        # Limpiar cualquier mugre o símbolo raro que la IA haya intentado colar
         texto_final = limpiar_texto(texto_final)
 
         # PASO 5: EXPORTAR DOCUMENTO
