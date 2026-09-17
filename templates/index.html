@@ -9,17 +9,15 @@
         .caja { background: white; padding: 30px; border-radius: 10px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); display: inline-block; max-width: 90%; width: 500px; }
         input, select, button { margin: 12px 0; padding: 12px; width: 100%; box-sizing: border-box; font-size: 16px; border: 1px solid #ccc; border-radius: 5px; }
         input:disabled { background-color: #e9ecef; cursor: not-allowed; }
-        button { background-color: #28a745; color: white; border: none; font-weight: bold; cursor: pointer; padding: 15px; }
+        button { background-color: #28a745; color: white; border: none; font-weight: bold; cursor: pointer; padding: 15px; transition: background 0.3s; }
         button:hover { background-color: #218838; }
         .nota { font-size: 13px; color: #666; text-align: left; margin-top: -5px; margin-bottom: 15px; display: block;}
         .divisor { font-weight: bold; color: #777; margin: 10px 0; }
         
-        /* Animación de carga */
         #pantalla-carga { display: none; text-align: center; margin-top: 20px; }
-        .spinner { border: 5px solid #f3f3f3; border-top: 5px solid #28a745; border-radius: 50%; width: 50px; height: 50px; animation: girar 1s linear infinite; margin: 0 auto 15px auto; }
-        @keyframes girar { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-        .texto-carga { font-weight: bold; color: #333; margin-bottom: 5px; }
-        .tiempo-carga { font-size: 14px; color: #666; }
+        .contenedor-barra { width: 100%; background-color: #e0e0e0; border-radius: 10px; overflow: hidden; margin-bottom: 10px; }
+        .barra-progreso { height: 20px; width: 0%; background-color: #28a745; transition: width 0.5s ease; }
+        .texto-carga { font-weight: bold; color: #333; margin-bottom: 5px; font-size: 18px; }
     </style>
 </head>
 <body>
@@ -29,7 +27,7 @@
         <form id="formulario" enctype="multipart/form-data">
             
             <input type="file" id="input-archivo" name="archivo_subido" accept="audio/*,video/*">
-            <span class="nota">*Sube un archivo local. (Desactiva el enlace)</span>
+            <span class="nota">*Sube un archivo de Audio o Video local.</span>
             
             <div class="divisor">--- O PEGÁ UN ENLACE ---</div>
             
@@ -51,15 +49,15 @@
                 <option value="pdf">📕 Descargar como PDF (.pdf)</option>
             </select>
 
-            <button type="submit" id="btn-submit">Iniciar Procesamiento Automático</button>
+            <button type="submit" id="btn-submit">Iniciar Procesamiento</button>
         </form>
 
-        <!-- Pantalla de carga -->
         <div id="pantalla-carga">
-            <div class="spinner"></div>
-            <div class="texto-carga">Procesando con Inteligencia Artificial...</div>
-            <div class="tiempo-carga" id="cronometro">Tiempo transcurrido: 00:00</div>
-            <p class="nota" style="text-align: center; margin-top: 15px;">La descarga comenzará automáticamente. Por favor, espera sin cerrar la pestaña.</p>
+            <div class="texto-carga" id="texto-estado">Iniciando...</div>
+            <div class="contenedor-barra">
+                <div class="barra-progreso" id="barra"></div>
+            </div>
+            <p class="nota" style="text-align: center; margin-top: 15px;">La IA está trabajando en segundo plano.<br>La descarga comenzará sola al llegar al 100%.</p>
         </div>
     </div>
 
@@ -68,89 +66,85 @@
         const inputEnlace = document.getElementById('input-enlace');
         const formulario = document.getElementById('formulario');
         const pantallaCarga = document.getElementById('pantalla-carga');
-        const cronometro = document.getElementById('cronometro');
-        const formatoDescarga = document.getElementById('formato-descarga');
+        const textoEstado = document.getElementById('texto-estado');
+        const barra = document.getElementById('barra');
 
-        // Lógica para bloquear los campos mutuamente
         inputArchivo.addEventListener('change', function() {
-            if (this.value) {
-                inputEnlace.disabled = true;
-                inputEnlace.value = ''; 
-            } else {
-                inputEnlace.disabled = false;
-            }
+            if (this.value) { inputEnlace.disabled = true; inputEnlace.value = ''; } 
+            else { inputEnlace.disabled = false; }
         });
 
         inputEnlace.addEventListener('input', function() {
-            if (this.value.trim() !== '') {
-                inputArchivo.disabled = true;
-                inputArchivo.value = ''; 
-            } else {
-                inputArchivo.disabled = false;
-            }
+            if (this.value.trim() !== '') { inputArchivo.disabled = true; inputArchivo.value = ''; } 
+            else { inputArchivo.disabled = false; }
         });
 
-        // Lógica AJAX para procesar y descargar restaurando la pantalla
+        function restaurarPantalla() {
+            formulario.style.display = 'block';
+            pantallaCarga.style.display = 'none';
+            barra.style.width = '0%';
+            textoEstado.innerText = 'Iniciando...';
+        }
+
         formulario.addEventListener('submit', async function(e) {
-            e.preventDefault(); // Evita recargar la página
+            e.preventDefault();
             
             if (!inputArchivo.value && !inputEnlace.value.trim()) {
-                alert("Por favor, sube un archivo o pega un enlace.");
+                alert("Sube un archivo o pega un enlace.");
                 return;
             }
 
-            // Ocultar formulario, mostrar carga
             formulario.style.display = 'none';
             pantallaCarga.style.display = 'block';
+            barra.style.width = '5%';
+            textoEstado.innerText = 'Subiendo información...';
             
-            let segundos = 0;
-            let intervalo = setInterval(function() {
-                segundos++;
-                let mins = Math.floor(segundos / 60).toString().padStart(2, '0');
-                let secs = (segundos % 60).toString().padStart(2, '0');
-                cronometro.innerText = `Tiempo transcurrido: ${mins}:${secs}`;
-            }, 1000);
-
+            let formData = new FormData(formulario);
+            
             try {
-                let formData = new FormData(formulario);
-                let respuesta = await fetch('/transcribir', {
-                    method: 'POST',
-                    body: formData
-                });
-
-                if (respuesta.ok) {
-                    let blob = await respuesta.blob();
-                    let url = window.URL.createObjectURL(blob);
-                    let a = document.createElement('a');
-                    a.href = url;
-                    
-                    // Obtener nombre del archivo del servidor
-                    let nombreArchivo = "transcripcion." + formatoDescarga.value;
-                    let disposicion = respuesta.headers.get('Content-Disposition');
-                    if (disposicion && disposicion.indexOf('attachment') !== -1) {
-                        let matches = /filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/.exec(disposicion);
-                        if (matches != null && matches[1]) { 
-                            nombreArchivo = matches[1].replace(/['"]/g, '');
-                        }
-                    }
-                    
-                    a.download = nombreArchivo;
-                    document.body.appendChild(a);
-                    a.click();
-                    a.remove();
-                    window.URL.revokeObjectURL(url);
-                } else {
-                    let errorTexto = await respuesta.text();
-                    alert("Error procesando: " + errorTexto);
+                let resInit = await fetch('/iniciar_transcripcion', { method: 'POST', body: formData });
+                let dataInit = await resInit.json();
+                
+                if (dataInit.error) {
+                    alert(dataInit.error);
+                    restaurarPantalla();
+                    return;
                 }
+                
+                let taskId = dataInit.task_id;
+                
+                let intervalo = setInterval(async function() {
+                    try {
+                        let resEst = await fetch('/estado/' + taskId);
+                        let dataEst = await resEst.json();
+                        
+                        if (dataEst.error) {
+                            clearInterval(intervalo);
+                            alert("Error: " + dataEst.error);
+                            restaurarPantalla();
+                            return;
+                        }
+                        
+                        barra.style.width = dataEst.progreso + '%';
+                        textoEstado.innerText = dataEst.estado;
+                        
+                        if (dataEst.progreso === 100) {
+                            clearInterval(intervalo);
+                            window.location.href = '/descargar/' + taskId; 
+                            setTimeout(restaurarPantalla, 4000);
+                        } else if (dataEst.progreso === -1) {
+                            clearInterval(intervalo);
+                            alert("Fallo el proceso: " + dataEst.estado);
+                            restaurarPantalla();
+                        }
+                    } catch(err) {
+                        console.log("Esperando servidor...");
+                    }
+                }, 2000);
+
             } catch (error) {
-                alert("Ocurrió un error de conexión.");
-            } finally {
-                // Al terminar (éxito o error), restaurar la pantalla
-                clearInterval(intervalo);
-                formulario.style.display = 'block';
-                pantallaCarga.style.display = 'none';
-                cronometro.innerText = 'Tiempo transcurrido: 00:00';
+                alert("Error de red al iniciar.");
+                restaurarPantalla();
             }
         });
     </script>
