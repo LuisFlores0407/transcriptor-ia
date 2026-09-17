@@ -76,7 +76,6 @@ def limpiar_texto(texto):
     """Traduce caracteres incompatibles con el PDF a texto plano estándar."""
     if not texto:
         return ""
-    # Reemplazar viñetas y guiones raros por guiones simples
     reemplazos = {
         '•': '-', '·': '-', '⁃': '-', '–': '-', '—': '-',
         '“': '"', '”': '"', '‘': "'", '’': "'",
@@ -106,13 +105,13 @@ def procesar_en_fondo(task_id, ruta_original, tipo_procesamiento, formato):
 
         if ESTADOS_TAREAS[task_id].get('cancelado'): return
 
-        # PASO 2: CORTAR
+        # PASO 2: CORTAR (Optimizado para Videos pesados)
         ESTADOS_TAREAS[task_id]['estado'] = 'Optimizando formato del audio...'
         ESTADOS_TAREAS[task_id]['progreso'] = 20
         chunk_pattern = os.path.join(temp_dir, f"chunk_{task_id}_%03d.mp3")
         subprocess.run([
-            "ffmpeg", "-y", "-i", ruta_audio, "-f", "segment", "-segment_time", "600",
-            "-c:a", "libmp3lame", chunk_pattern
+            "ffmpeg", "-y", "-i", ruta_audio, "-vn", "-f", "segment", "-segment_time", "600",
+            "-c:a", "libmp3lame", "-b:a", "64k", chunk_pattern
         ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
         # PASO 3: TRANSCRIBIR
@@ -171,7 +170,6 @@ def procesar_en_fondo(task_id, ruta_original, tipo_procesamiento, formato):
             ESTADOS_TAREAS[task_id]['estado'] = 'Pensando... Aplicando Inteligencia Artificial...'
             ESTADOS_TAREAS[task_id]['progreso'] = 75
             
-            # Instrucciones positivas para evitar que el modelo devuelva un documento vacío
             if tipo_procesamiento == 'voces':
                 prompt = "Instrucciones: 1. Lee el texto con marcas de tiempo. 2. Identifica a los diferentes hablantes. 3. Agrupa las frases continuas de una misma persona en un solo párrafo. 4. Indica el tiempo de inicio y fin de esa intervención. Ejemplo: '[00:10 - 01:25] Hablante 1: Hola, ¿cómo estás?'. 5. Devuelve únicamente la transcripción formateada, sin texto adicional."
             elif tipo_procesamiento == 'profesional':
@@ -192,7 +190,6 @@ def procesar_en_fondo(task_id, ruta_original, tipo_procesamiento, formato):
 
         if ESTADOS_TAREAS[task_id].get('cancelado'): return
 
-        # Limpiar texto para evitar fallos en ReportLab
         texto_final = limpiar_texto(texto_final)
 
         # PASO 5: EXPORTAR DOCUMENTO
