@@ -73,18 +73,28 @@ def descargar_archivo(task_id):
     return "El archivo no está listo o hubo un error", 400
 
 def limpiar_texto(texto):
-    """Traduce caracteres incompatibles con el PDF a texto plano estándar."""
-    if not texto:
-        return ""
+    """Filtro de seguridad estricto para PDF."""
+    if not texto: return ""
+    
+    # Limpia viñetas, guiones largos y formatos markdown persistentes
     reemplazos = {
-        '•': '-', '·': '-', '⁃': '-', '–': '-', '—': '-',
+        '•': '-', '·': '-', '⁃': '-', '–': '-', '—': '-', '−': '-', '―': '-',
         '“': '"', '”': '"', '‘': "'", '’': "'",
-        '**': '', '##': '', '*': '-',
+        '**': '', '##': '', '#': '', '*': '-', '→': '-', '⇒': '-',
         '\xa0': ' ', '\u202f': ' ', '\u200b': ''
     }
     for mal, bien in reemplazos.items():
         texto = texto.replace(mal, bien)
-    return texto
+
+    # Verifica cada caracter. Si el PDF no puede leerlo, lo transforma en un espacio.
+    texto_seguro = ""
+    for char in texto:
+        try:
+            char.encode('latin-1')
+            texto_seguro += char
+        except UnicodeEncodeError:
+            texto_seguro += ' ' 
+    return texto_seguro
 
 def procesar_en_fondo(task_id, ruta_original, tipo_procesamiento, formato):
     try:
@@ -93,7 +103,6 @@ def procesar_en_fondo(task_id, ruta_original, tipo_procesamiento, formato):
 
         if ESTADOS_TAREAS[task_id].get('cancelado'): return
 
-        # PASO 1: DESCARGA
         if ruta_original.startswith('http'):
             ESTADOS_TAREAS[task_id]['estado'] = 'Descargando de Google Drive...'
             ESTADOS_TAREAS[task_id]['progreso'] = 10
@@ -105,7 +114,6 @@ def procesar_en_fondo(task_id, ruta_original, tipo_procesamiento, formato):
 
         if ESTADOS_TAREAS[task_id].get('cancelado'): return
 
-        # PASO 2: CORTAR (Optimizado para Videos pesados)
         ESTADOS_TAREAS[task_id]['estado'] = 'Optimizando formato del audio...'
         ESTADOS_TAREAS[task_id]['progreso'] = 20
         chunk_pattern = os.path.join(temp_dir, f"chunk_{task_id}_%03d.mp3")
@@ -114,7 +122,6 @@ def procesar_en_fondo(task_id, ruta_original, tipo_procesamiento, formato):
             "-c:a", "libmp3lame", "-b:a", "64k", chunk_pattern
         ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
-        # PASO 3: TRANSCRIBIR
         chunks_generados = sorted(glob.glob(os.path.join(temp_dir, f"chunk_{task_id}_*.mp3")))
         total_chunks = len(chunks_generados)
         
@@ -159,7 +166,6 @@ def procesar_en_fondo(task_id, ruta_original, tipo_procesamiento, formato):
 
         if ESTADOS_TAREAS[task_id].get('cancelado'): return
 
-        # PASO 4: IA AVANZADA
         titulo = 'Informe y Análisis' if tipo_procesamiento == 'resumen' else 'Transcripción'
 
         if tipo_procesamiento == 'rapida':
@@ -171,20 +177,20 @@ def procesar_en_fondo(task_id, ruta_original, tipo_procesamiento, formato):
             ESTADOS_TAREAS[task_id]['progreso'] = 75
             
             if tipo_procesamiento == 'voces':
-                prompt = "Instrucciones: 1. Lee el texto con marcas de tiempo. 2. Identifica a los diferentes hablantes. 3. Agrupa las frases continuas de una misma persona en un solo párrafo. 4. Indica el tiempo de inicio y fin de esa intervención. Ejemplo: '[00:10 - 01:25] Hablante 1: Hola, ¿cómo estás?'. 5. Devuelve únicamente la transcripción formateada, sin texto adicional."
+                prompt = "Instrucciones: 1. Identifica hablantes. 2. Agrupa frases continuas de la misma persona. 3. Indica el intervalo de tiempo (Ej: '[00:10 - 01:25] Hablante 1: Hola'). 4. Devuelve SOLAMENTE la transcripción en texto plano."
             elif tipo_procesamiento == 'profesional':
-                prompt = "Instrucciones: 1. Lee el texto con marcas de tiempo. 2. Agrupa las frases de un mismo hablante e indica el intervalo de tiempo (Ejemplo: '[00:10 - 01:25] Hablante 1: texto'). 3. Corrige la gramática y transforma cualquier lenguaje informal en un registro profesional. 4. Devuelve únicamente la transcripción mejorada."
+                prompt = "Instrucciones: 1. Agrupa frases del mismo hablante indicando el intervalo de tiempo (Ej: '[00:10 - 01:25] Hablante 1: texto'). 2. Transforma el lenguaje a un registro profesional formal. 3. Devuelve SOLAMENTE la transcripción en texto plano."
             elif tipo_procesamiento == 'resumen':
-                prompt = "Instrucciones: Elabora un informe analítico detallado sobre los temas del audio. Utiliza únicamente guiones simples (-) para hacer listas. Estructura la información de forma clara y profesional. No utilices asteriscos, ni viñetas especiales."
+                prompt = "Instrucciones: Elabora un informe analítico detallado. REGLA ESTRICTA: Escribe única y exclusivamente en TEXTO PLANO estándar. Usa SOLO el guion medio corto (-) para listas. PROHIBIDO usar guiones largos, símbolos, hashtags, asteriscos, o flechas."
             elif tipo_procesamiento == 'traduccion':
-                prompt = "Instrucciones: Traduce el siguiente texto al Español Latino. Agrupa a los hablantes con sus intervalos de tiempo correspondientes (Ejemplo: '[00:10 - 01:25] Hablante 1: texto'). Devuelve únicamente la traducción."
+                prompt = "Instrucciones: Traduce al Español Latino. Agrupa a los hablantes con sus intervalos de tiempo (Ej: '[00:10 - 01:25] Hablante 1: texto'). Devuelve SOLO la traducción en texto plano."
             
             texto_base = texto_crudo_sin if tipo_procesamiento == 'resumen' else texto_crudo_con
 
             chat_completion = client.chat.completions.create(
                 messages=[{"role": "system", "content": prompt}, {"role": "user", "content": texto_base}],
                 model="openai/gpt-oss-120b",
-                temperature=0.2, 
+                temperature=0.1, 
             )
             texto_final = chat_completion.choices[0].message.content
 
@@ -192,7 +198,6 @@ def procesar_en_fondo(task_id, ruta_original, tipo_procesamiento, formato):
 
         texto_final = limpiar_texto(texto_final)
 
-        # PASO 5: EXPORTAR DOCUMENTO
         ESTADOS_TAREAS[task_id]['estado'] = 'Generando archivo final...'
         ESTADOS_TAREAS[task_id]['progreso'] = 95
         
@@ -204,8 +209,7 @@ def procesar_en_fondo(task_id, ruta_original, tipo_procesamiento, formato):
             
             for linea in texto_final.split('\n'):
                 if linea.strip():
-                    linea_limpia = escape(linea.encode('latin-1', 'replace').decode('latin-1'))
-                    historia.append(Paragraph(linea_limpia, estilos['Normal']))
+                    historia.append(Paragraph(escape(linea), estilos['Normal']))
                     historia.append(Spacer(1, 6))
             pdf.build(historia)
         else:
