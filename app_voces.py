@@ -29,27 +29,26 @@ def transcribir():
     ruta_archivo = None
 
     try:
+        # --- 1: OBTENER EL ARCHIVO ---
         if enlace:
             if 'drive.google.com' in enlace:
                 ruta_archivo = os.path.join(temp_dir, 'archivo_drive')
-                # CORRECCIÓN: Se eliminó fuzzy=True
                 gdown.download(enlace, ruta_archivo, quiet=True)
                 if not os.path.exists(ruta_archivo):
-                    return "Error descargando de Drive. Verifica que el enlace sea Público.", 400
+                    return "Error descargando de Drive. ¿Está en 'Cualquier persona con el enlace'?", 400
             else:
-                # CORRECCIÓN: Intento de evasión de bots de YouTube
+                # TRUCO FINAL ANTI-BOTS YOUTUBE
                 ydl_opts = {
                     'format': 'bestaudio/best',
                     'outtmpl': os.path.join(temp_dir, 'yt_audio.%(ext)s'),
                     'postprocessors': [{'key': 'FFmpegExtractAudio', 'preferredcodec': 'mp3', 'preferredquality': '192'}],
                     'quiet': True,
-                    'extractor_args': {'youtube': {'client': ['mweb', 'android']}},
+                    'extractor_args': {'youtube': {'player_client': ['android', 'web']}},
                     'nocheckcertificate': True
                 }
                 with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                     ydl.download([enlace])
                 ruta_archivo = os.path.join(temp_dir, 'yt_audio.mp3')
-                
         elif 'archivo_subido' in request.files and request.files['archivo_subido'].filename != '':
             archivo = request.files['archivo_subido']
             ruta_archivo = os.path.join(temp_dir, archivo.filename)
@@ -57,14 +56,14 @@ def transcribir():
         else:
             return "Por favor, sube un archivo o pega un enlace.", 400
 
-        # Cortar audio
+        # --- 2: CORTAR AUDIO ---
         chunk_pattern = os.path.join(temp_dir, "chunk_%03d.mp3")
         subprocess.run([
             "ffmpeg", "-y", "-i", ruta_archivo, "-f", "segment", "-segment_time", "600",
             "-c:a", "libmp3lame", chunk_pattern
         ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         
-        # Transcribir con cronómetro
+        # --- 3: TRANSCRIBIR CON CRONÓMETRO (Timestamps) ---
         texto_crudo_sin = ""
         texto_crudo_con = ""
         offset = 0
@@ -98,7 +97,7 @@ def transcribir():
             offset += 600
             os.remove(chunk_path)
 
-        # Procesar con IA
+        # --- 4: PROCESAR CON INTELIGENCIA ARTIFICIAL ---
         if tipo_procesamiento == 'rapida':
             texto_final = texto_crudo_sin
             titulo = 'Transcripción Rápida'
@@ -122,7 +121,7 @@ def transcribir():
             texto_final = chat_completion.choices[0].message.content
             titulo = f'Documento - Modo {tipo_procesamiento.capitalize()}'
 
-        # Descargar
+        # --- 5: DESCARGAR (WORD O PDF) ---
         if formato == 'pdf':
             temp_path = os.path.join(temp_dir, f"resultado_{tipo_procesamiento}.pdf")
             pdf = SimpleDocTemplate(temp_path, pagesize=letter)
@@ -149,7 +148,7 @@ def transcribir():
             return send_file(temp_path, as_attachment=True)
 
     except Exception as e:
-        return f"Error procesando: {str(e)}", 500
+        return f"{str(e)}", 400
 
 if __name__ == '__main__':
     puerto = int(os.environ.get("PORT", 10000))
