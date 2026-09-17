@@ -3,36 +3,47 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Transcriptor y Analista IA Profesional</title>
+    <title>Suite de Transcripción y Análisis IA</title>
     <style>
         body { font-family: Arial, sans-serif; text-align: center; margin-top: 40px; background-color: #f0f2f5; }
-        .caja { background: white; padding: 30px; border-radius: 10px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); display: inline-block; max-width: 90%; }
+        .caja { background: white; padding: 30px; border-radius: 10px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); display: inline-block; max-width: 90%; width: 500px; }
         input, select, button { margin: 12px 0; padding: 12px; width: 100%; box-sizing: border-box; font-size: 16px; border: 1px solid #ccc; border-radius: 5px; }
+        input:disabled { background-color: #e9ecef; cursor: not-allowed; }
         button { background-color: #28a745; color: white; border: none; font-weight: bold; cursor: pointer; padding: 15px; }
         button:hover { background-color: #218838; }
         .nota { font-size: 13px; color: #666; text-align: left; margin-top: -5px; margin-bottom: 15px; display: block;}
         .divisor { font-weight: bold; color: #777; margin: 10px 0; }
-        .fila { display: flex; gap: 10px; }
+        
+        /* Animación de carga */
+        #pantalla-carga { display: none; text-align: center; margin-top: 20px; }
+        .spinner { border: 5px solid #f3f3f3; border-top: 5px solid #28a745; border-radius: 50%; width: 50px; height: 50px; animation: girar 1s linear infinite; margin: 0 auto 15px auto; }
+        @keyframes girar { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .texto-carga { font-weight: bold; color: #333; margin-bottom: 5px; }
+        .tiempo-carga { font-size: 14px; color: #666; }
     </style>
 </head>
 <body>
     <div class="caja">
-        <h2>Suite de Transcripción y Análisis IA</h2>
-        <form action="/transcribir" method="post" enctype="multipart/form-data">
+        <h2>Transcriptor y Analista IA</h2>
+        
+        <form id="formulario" action="/transcribir" method="post" enctype="multipart/form-data">
             
-            <input type="file" name="archivo_subido" accept="audio/*,video/*">
-            <span class="nota">*Sube un archivo de Audio o Video local.</span>
+            <input type="file" id="input-archivo" name="archivo_subido" accept="audio/*,video/*">
+            <span class="nota">*Sube un archivo local. (Desactiva el enlace)</span>
             
             <div class="divisor">--- O PEGÁ UN ENLACE ---</div>
-            <input type="url" name="enlace" placeholder="Enlace de YouTube o Google Drive...">
+            
+            <input type="url" id="input-enlace" name="enlace" placeholder="Enlace de YouTube o Google Drive...">
+            <span class="nota">*Pegar un enlace desactiva la subida de archivo.</span>
             
             <div class="divisor">--- CONFIGURACIÓN ---</div>
+            
             <select name="tipo">
                 <option value="rapida">⚡ Modo Rápido (Texto corrido sin minutos)</option>
                 <option value="voces">🗣️ Modo Avanzado (Separar voces + Minutos)</option>
                 <option value="profesional">👔 Modo Profesional (Lenguaje Formal + Voces + Minutos)</option>
                 <option value="resumen">📊 Modo Resumen (Puntos clave y estructurado)</option>
-                <option value="traduccion">🌍 Traductor Universal (Traducir a Esp Latino + Voces + Minutos)</option>
+                <option value="traduccion">🌍 Traductor Universal (Traducir a Esp Latino + Voces)</option>
             </select>
 
             <select name="formato">
@@ -42,6 +53,55 @@
 
             <button type="submit">Iniciar Procesamiento Automático</button>
         </form>
+
+        <!-- Pantalla de carga que reemplaza al formulario -->
+        <div id="pantalla-carga">
+            <div class="spinner"></div>
+            <div class="texto-carga">Procesando con Inteligencia Artificial...</div>
+            <div class="tiempo-carga" id="cronometro">Tiempo transcurrido: 00:00</div>
+            <p class="nota" style="text-align: center; margin-top: 15px;">Por favor, no cierres esta pestaña. La descarga comenzará automáticamente cuando termine.</p>
+        </div>
     </div>
+
+    <script>
+        const inputArchivo = document.getElementById('input-archivo');
+        const inputEnlace = document.getElementById('input-enlace');
+        const formulario = document.getElementById('formulario');
+        const pantallaCarga = document.getElementById('pantalla-carga');
+        const cronometro = document.getElementById('cronometro');
+
+        // Lógica para bloquear campos mutuamente
+        inputArchivo.addEventListener('change', function() {
+            if (this.value) {
+                inputEnlace.disabled = true;
+                inputEnlace.value = ''; // Limpia el enlace si había uno
+            } else {
+                inputEnlace.disabled = false;
+            }
+        });
+
+        inputEnlace.addEventListener('input', function() {
+            if (this.value.trim() !== '') {
+                inputArchivo.disabled = true;
+                inputArchivo.value = ''; // Limpia el archivo si había uno
+            } else {
+                inputArchivo.disabled = false;
+            }
+        });
+
+        // Lógica para mostrar la pantalla de carga y el cronómetro
+        formulario.addEventListener('submit', function() {
+            formulario.style.display = 'none';
+            pantallaCarga.style.display = 'block';
+            
+            let segundos = 0;
+            setInterval(function() {
+                segundos++;
+                let mins = Math.floor(segundos / 60).toString().padStart(2, '0');
+                let secs = (segundos % 60).toString().padStart(2, '0');
+                cronometro.innerText = `Tiempo transcurrido: ${mins}:${secs}`;
+            }, 1000);
+        });
+    </script>
 </body>
 </html>
