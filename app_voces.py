@@ -29,21 +29,22 @@ def transcribir():
     ruta_archivo = None
 
     try:
-        # --- 1: OBTENER EL ARCHIVO ---
         if enlace:
             if 'drive.google.com' in enlace:
                 ruta_archivo = os.path.join(temp_dir, 'archivo_drive')
-                gdown.download(enlace, ruta_archivo, quiet=True, fuzzy=True)
+                # CORRECCIÓN: Se eliminó fuzzy=True
+                gdown.download(enlace, ruta_archivo, quiet=True)
                 if not os.path.exists(ruta_archivo):
-                    return "Error descargando de Drive. ¿Está Público?", 400
+                    return "Error descargando de Drive. Verifica que el enlace sea Público.", 400
             else:
-                # --- AQUÍ ESTÁ EL DISFRAZ ANTI-BOTS PARA YOUTUBE ---
+                # CORRECCIÓN: Intento de evasión de bots de YouTube
                 ydl_opts = {
                     'format': 'bestaudio/best',
                     'outtmpl': os.path.join(temp_dir, 'yt_audio.%(ext)s'),
                     'postprocessors': [{'key': 'FFmpegExtractAudio', 'preferredcodec': 'mp3', 'preferredquality': '192'}],
                     'quiet': True,
-                    'extractor_args': {'youtube': {'player_client': ['android']}} # Simulamos ser un celular
+                    'extractor_args': {'youtube': {'client': ['mweb', 'android']}},
+                    'nocheckcertificate': True
                 }
                 with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                     ydl.download([enlace])
@@ -56,14 +57,14 @@ def transcribir():
         else:
             return "Por favor, sube un archivo o pega un enlace.", 400
 
-        # --- 2: CORTAR AUDIO ---
+        # Cortar audio
         chunk_pattern = os.path.join(temp_dir, "chunk_%03d.mp3")
         subprocess.run([
             "ffmpeg", "-y", "-i", ruta_archivo, "-f", "segment", "-segment_time", "600",
             "-c:a", "libmp3lame", chunk_pattern
         ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         
-        # --- 3: TRANSCRIBIR CON CRONÓMETRO (Timestamps) ---
+        # Transcribir con cronómetro
         texto_crudo_sin = ""
         texto_crudo_con = ""
         offset = 0
@@ -77,7 +78,6 @@ def transcribir():
                     response_format="verbose_json"
                 )
                 
-                # Extraer segmentos
                 segments = getattr(t, 'segments', [])
                 if not segments and isinstance(t, dict):
                     segments = t.get('segments', [])
@@ -88,7 +88,6 @@ def transcribir():
                         minutos = int(inicio // 60)
                         segundos = int(inicio % 60)
                         texto_seg = seg.get('text', '')
-                        
                         texto_crudo_con += f"[{minutos:02d}:{segundos:02d}] {texto_seg}\n"
                         texto_crudo_sin += texto_seg + " "
                 else:
@@ -99,7 +98,7 @@ def transcribir():
             offset += 600
             os.remove(chunk_path)
 
-        # --- 4: PROCESAR CON INTELIGENCIA ARTIFICIAL ---
+        # Procesar con IA
         if tipo_procesamiento == 'rapida':
             texto_final = texto_crudo_sin
             titulo = 'Transcripción Rápida'
@@ -123,7 +122,7 @@ def transcribir():
             texto_final = chat_completion.choices[0].message.content
             titulo = f'Documento - Modo {tipo_procesamiento.capitalize()}'
 
-        # --- 5: DESCARGAR (WORD O PDF) ---
+        # Descargar
         if formato == 'pdf':
             temp_path = os.path.join(temp_dir, f"resultado_{tipo_procesamiento}.pdf")
             pdf = SimpleDocTemplate(temp_path, pagesize=letter)
