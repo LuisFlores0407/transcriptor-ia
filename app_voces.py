@@ -8,7 +8,6 @@ from flask import Flask, render_template, request, send_file, jsonify
 from groq import Groq
 from docx import Document
 import gdown
-from pytubefix import YouTube
 from reportlab.lib.pagesizes import letter
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
 from reportlab.lib.styles import getSampleStyleSheet
@@ -23,10 +22,16 @@ ESTADOS_TAREAS = {}
 def index():
     return render_template('index.html')
 
+@app.route('/cancelar/<task_id>', methods=['POST'])
+def cancelar_tarea(task_id):
+    if task_id in ESTADOS_TAREAS:
+        ESTADOS_TAREAS[task_id]['cancelado'] = True
+    return jsonify({'status': 'cancelado'})
+
 @app.route('/iniciar_transcripcion', methods=['POST'])
 def iniciar_transcripcion():
     task_id = str(uuid.uuid4())
-    ESTADOS_TAREAS[task_id] = {'estado': 'Iniciando...', 'progreso': 5, 'archivo_listo': None}
+    ESTADOS_TAREAS[task_id] = {'estado': 'Iniciando...', 'progreso': 5, 'archivo_listo': None, 'cancelado': False}
 
     tipo_procesamiento = request.form.get('tipo', 'rapida')
     formato = request.form.get('formato', 'docx')
@@ -66,33 +71,28 @@ def descargar_archivo(task_id):
         return send_file(tarea['archivo_listo'], as_attachment=True)
     return "El archivo no está listo o hubo un error", 400
 
+def limpiar_texto(texto):
+    """Elimina caracteres invisibles que rompen los documentos (ej. signos de interrogación)"""
+    return texto.replace('\xa0', ' ').replace('\u202f', ' ').replace('\u200b', '')
+
 def procesar_en_fondo(task_id, ruta_original, tipo_procesamiento, formato):
     try:
         temp_dir = tempfile.gettempdir()
         ruta_audio = ruta_original
 
-        # PASO 1: DRIVE O YOUTUBE
+        if ESTADOS_TAREAS[task_id].get('cancelado'): return
+
+        # PASO 1: DRIVE
         if ruta_original.startswith('http'):
-            if 'drive.google.com' in ruta_original:
-                ESTADOS_TAREAS[task_id]['estado'] = 'Descargando de Google Drive...'
-                ESTADOS_TAREAS[task_id]['progreso'] = 10
-                ruta_descarga = os.path.join(temp_dir, f"drive_{task_id}")
-                gdown.download(ruta_original, ruta_descarga, quiet=True)
-                if not os.path.exists(ruta_descarga):
-                    raise Exception("Error en Drive. ¿Está en 'Cualquier persona con el enlace'?")
-                ruta_audio = ruta_descarga
-            elif 'youtube.com' in ruta_original or 'youtu.be' in ruta_original:
-                ESTADOS_TAREAS[task_id]['estado'] = 'Evadiendo seguridad de YouTube...'
-                ESTADOS_TAREAS[task_id]['progreso'] = 10
-                # Disfrazamos la petición como si viniera de YouTube Music en Android
-                yt = YouTube(ruta_original, client='ANDROID_MUSIC')
-                audio_stream = yt.streams.filter(only_audio=True).first()
-                if not audio_stream:
-                    raise Exception("No se pudo extraer el audio de YouTube.")
-                ruta_descarga = audio_stream.download(output_path=temp_dir, filename=f"yt_{task_id}.mp4")
-                ruta_audio = ruta_descarga
-            else:
-                raise Exception("Enlace no soportado. Usa YouTube o Google Drive.")
+            ESTADOS_TAREAS[task_id]['estado'] = 'Descargando de Google Drive...'
+            ESTADOS_TAREAS[task_id]['progreso'] = 10
+            ruta_descarga = os.path.join(temp_dir, f"drive_{task_id}")
+            gdown.download(ruta_original, ruta_descarga, quiet=True)
+            if not os.path.exists(ruta_descarga):
+                raise Exception("Error en Drive. ¿Está en 'Cualquier persona con el enlace'?")
+            ruta_audio = ruta_descarga
+
+        if ESTADOS_TAREAS[task_id].get('cancelado'): return
 
         # PASO 2: CORTAR
         ESTADOS_TAREAS[task_id]['estado'] = 'Optimizando formato del audio...'
@@ -115,6 +115,7 @@ def procesar_en_fondo(task_id, ruta_original, tipo_procesamiento, formato):
         offset = 0
 
         for i, chunk_path in enumerate(chunks_generados):
+            if ESTADOS_TAREAS[task_id].get('cancelado'): return
             ESTADOS_TAREAS[task_id]['estado'] = f'Transcribiendo bloque {i+1} de {total_chunks}...'
             ESTADOS_TAREAS[task_id]['progreso'] = 20 + int(40 * (i / total_chunks)) 
             
@@ -145,34 +146,42 @@ def procesar_en_fondo(task_id, ruta_original, tipo_procesamiento, formato):
             offset += 600
             os.remove(chunk_path)
 
+        if ESTADOS_TAREAS[task_id].get('cancelado'): return
+
         # PASO 4: IA AVANZADA
+        # Lógica de títulos
+        titulo = 'Informe y Análisis' if tipo_procesamiento == 'resumen' else 'Transcripción'
+
         if tipo_procesamiento == 'rapida':
             ESTADOS_TAREAS[task_id]['estado'] = 'Unificando textos...'
             ESTADOS_TAREAS[task_id]['progreso'] = 80
             texto_final = texto_crudo_sin
-            titulo = 'Transcripción Rápida'
         else:
             ESTADOS_TAREAS[task_id]['estado'] = 'Pensando... Aplicando Inteligencia Artificial...'
             ESTADOS_TAREAS[task_id]['progreso'] = 75
             
             if tipo_procesamiento == 'voces':
-                prompt = "Eres un transcriptor experto. Toma el texto, que incluye marcas de tiempo, y sepáralo por hablantes. Conserva estrictamente los minutos y segundos al inicio de cada intervención. No resumas."
+                prompt = "Eres un transcriptor experto. Toma el texto, que incluye marcas de tiempo, y sepáralo por hablantes. Conserva estrictamente los minutos y segundos al inicio de cada intervención. Usa español neutro, claro y no agregues caracteres extraños. No resumas, transcribe todo."
             elif tipo_procesamiento == 'profesional':
-                prompt = "Eres un asistente ejecutivo. Toma el texto con sus marcas de tiempo, sepáralo por hablantes y corrige lenguaje vulgar o coloquial pasándolo a un registro formal. Conserva los minutos."
+                prompt = "Eres un asistente ejecutivo. Toma el texto con sus marcas de tiempo, sepáralo por hablantes y corrige lenguaje vulgar o coloquial pasándolo a un registro formal. Conserva los minutos. Usa español neutro, claro y sin caracteres extraños."
             elif tipo_procesamiento == 'resumen':
-                prompt = "Eres un analista de negocios. Toma el texto crudo y crea un Resumen Ejecutivo estructurado. Extrae: 1. Tema Principal, 2. Puntos Clave, 3. Decisiones, 4. Próximos Pasos."
+                prompt = "Eres un analista experto. Toma el texto crudo y elabora un informe analítico sumamente interesante y detallado. Estructura el documento de forma clara, destacando los temas y puntos principales que se abordan en el audio, acompañados de un buen análisis de contenido. Usa español claro y sin caracteres especiales extraños."
             elif tipo_procesamiento == 'traduccion':
-                prompt = "Eres un traductor experto. Traduce todo al Español Latino. Separa a los diferentes hablantes y conserva las marcas de tiempo en las intervenciones."
+                prompt = "Eres un traductor experto. Traduce todo al Español Latino. Separa a los diferentes hablantes y conserva las marcas de tiempo. Usa un lenguaje natural y sin caracteres especiales extraños."
             
             texto_base = texto_crudo_sin if tipo_procesamiento == 'resumen' else texto_crudo_con
 
             chat_completion = client.chat.completions.create(
                 messages=[{"role": "system", "content": prompt}, {"role": "user", "content": texto_base}],
                 model="openai/gpt-oss-120b",
-                temperature=0.2,
+                temperature=0.1, # Temperatura reducida para evitar alucinaciones
             )
             texto_final = chat_completion.choices[0].message.content
-            titulo = f'Documento - Modo {tipo_procesamiento.capitalize()}'
+
+        if ESTADOS_TAREAS[task_id].get('cancelado'): return
+
+        # Limpieza de caracteres problemáticos
+        texto_final = limpiar_texto(texto_final)
 
         # PASO 5: EXPORTAR DOCUMENTO
         ESTADOS_TAREAS[task_id]['estado'] = 'Generando archivo final...'
@@ -199,7 +208,6 @@ def procesar_en_fondo(task_id, ruta_original, tipo_procesamiento, formato):
                     doc.add_paragraph(linea)
             doc.save(temp_path)
 
-        # FINALIZAR
         ESTADOS_TAREAS[task_id]['archivo_listo'] = temp_path
         ESTADOS_TAREAS[task_id]['estado'] = '¡Proceso completado con éxito!'
         ESTADOS_TAREAS[task_id]['progreso'] = 100
