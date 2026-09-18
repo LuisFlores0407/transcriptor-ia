@@ -98,7 +98,6 @@ def extraer_id_youtube(url):
     match = re.search(r"(?:v=|\/)([0-9A-Za-z_-]{11}).*", url)
     return match.group(1) if match else None
 
-# NUEVA FUNCIÓN: Divide un texto largo en bloques manejables para la IA
 def dividir_texto_por_lineas(texto, max_lineas=50):
     lineas = texto.strip().split('\n')
     bloques = []
@@ -247,18 +246,18 @@ def procesar_en_fondo(task_id, ruta_original, tipo_procesamiento, formato):
             ESTADOS_TAREAS[task_id]['progreso'] = 50
             
             if tipo_procesamiento == 'voces':
-                prompt = "Instrucciones: 1. Identifica hablantes. 2. Agrupa frases continuas de la misma persona. 3. Indica el intervalo de tiempo (Ej: '[00:10 - 01:25] Hablante 1: Hola'). 4. Devuelve SOLAMENTE la transcripción en texto plano."
+                prompt = "Instrucciones: 1. Identifica hablantes. 2. Agrupa frases continuas de la misma persona. 3. Indica el intervalo de tiempo (Ej: '[00:10 - 01:25] Hablante 1: Hola'). REGLA ESTRICTA: Tienes PROHIBIDO resumir, omitir o saltarte palabras. Debes transcribir el 100% del texto original, limitándote únicamente a corregir el formato y agrupar los hablantes."
             elif tipo_procesamiento == 'profesional':
-                prompt = "Instrucciones: 1. Agrupa frases del mismo hablante indicando el intervalo de tiempo (Ej: '[00:10 - 01:25] Hablante 1: texto'). 2. Transforma el lenguaje a un registro profesional formal. 3. Devuelve SOLAMENTE la transcripción en texto plano."
+                prompt = "Instrucciones: 1. Agrupa frases del mismo hablante indicando el intervalo de tiempo (Ej: '[00:10 - 01:25] Hablante 1: texto'). 2. Transforma el lenguaje a un registro profesional formal. REGLA ESTRICTA: Tienes PROHIBIDO resumir, omitir detalles o saltarte frases. Mantén la longitud y el sentido completo del texto original."
             elif tipo_procesamiento == 'resumen':
                 prompt = "Instrucciones: Elabora un informe analítico detallado. REGLA ESTRICTA: Escribe única y exclusivamente en TEXTO PLANO estándar. Usa SOLO el guion medio corto (-) para listas. PROHIBIDO usar guiones largos, símbolos, hashtags, asteriscos, o flechas."
             elif tipo_procesamiento == 'traduccion':
-                prompt = "Instrucciones: Traduce al Español Latino. Agrupa a los hablantes con sus intervalos de tiempo (Ej: '[00:10 - 01:25] Hablante 1: texto'). Devuelve SOLO la traducción en texto plano."
+                prompt = "Instrucciones: Traduce al Español Latino. Agrupa a los hablantes con sus intervalos de tiempo (Ej: '[00:10 - 01:25] Hablante 1: texto'). REGLA ESTRICTA: Tienes PROHIBIDO resumir u omitir frases. Debes traducir el 100% del texto original sin saltarte nada."
             
             texto_base = texto_crudo_sin if tipo_procesamiento == 'resumen' else texto_crudo_con
             
-            # AQUI ESTA LA MAGIA: Dividimos el texto si es muy largo
-            bloques_de_texto = dividir_texto_por_lineas(texto_base, max_lineas=60)
+            # Ajuste de tamaño: Reducimos de 60 a 30 líneas por bloque para evitar la "pereza" de la IA
+            bloques_de_texto = dividir_texto_por_lineas(texto_base, max_lineas=30)
             total_bloques = len(bloques_de_texto)
             texto_final = ""
             
