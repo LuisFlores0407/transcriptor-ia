@@ -98,6 +98,15 @@ def extraer_id_youtube(url):
     match = re.search(r"(?:v=|\/)([0-9A-Za-z_-]{11}).*", url)
     return match.group(1) if match else None
 
+# NUEVA FUNCIÓN: Divide un texto largo en bloques manejables para la IA
+def dividir_texto_por_lineas(texto, max_lineas=50):
+    lineas = texto.strip().split('\n')
+    bloques = []
+    for i in range(0, len(lineas), max_lineas):
+        bloque = '\n'.join(lineas[i:i+max_lineas])
+        bloques.append(bloque)
+    return bloques
+
 def procesar_en_fondo(task_id, ruta_original, tipo_procesamiento, formato):
     try:
         temp_dir = tempfile.gettempdir()
@@ -146,7 +155,7 @@ def procesar_en_fondo(task_id, ruta_original, tipo_procesamiento, formato):
                     }
                     
                     exito_descarga = False
-                    for intento in range(24):
+                    for intento in range(10):
                         if ESTADOS_TAREAS[task_id].get('cancelado'): return
                         
                         mp3_response = requests.get(link_descarga, headers=headers_descarga, stream=True)
@@ -159,9 +168,9 @@ def procesar_en_fondo(task_id, ruta_original, tipo_procesamiento, formato):
                             ruta_audio = ruta_descarga
                             exito_descarga = True
                             break
-                        elif mp3_response.status_code in [404, 403]:
-                            ESTADOS_TAREAS[task_id]['estado'] = f'Convirtiendo video (puede demorar). Intento {intento+1}/24...'
-                            time.sleep(5)
+                        elif mp3_response.status_code in [404, 403, 429]:
+                            ESTADOS_TAREAS[task_id]['estado'] = f'Procesando video en la nube. Intento {intento+1}/10...'
+                            time.sleep(15)
                         else:
                             raise Exception(f"El enlace generado falló (Error HTTP {mp3_response.status_code}).")
                             
@@ -196,7 +205,7 @@ def procesar_en_fondo(task_id, ruta_original, tipo_procesamiento, formato):
         for i, chunk_path in enumerate(chunks_generados):
             if ESTADOS_TAREAS[task_id].get('cancelado'): return
             ESTADOS_TAREAS[task_id]['estado'] = f'Transcribiendo bloque {i+1} de {total_chunks}...'
-            ESTADOS_TAREAS[task_id]['progreso'] = 20 + int(40 * (i / total_chunks)) 
+            ESTADOS_TAREAS[task_id]['progreso'] = 20 + int(20 * (i / total_chunks)) 
             
             with open(chunk_path, "rb") as af:
                 t = client.audio.transcriptions.create(
@@ -234,8 +243,8 @@ def procesar_en_fondo(task_id, ruta_original, tipo_procesamiento, formato):
             ESTADOS_TAREAS[task_id]['progreso'] = 80
             texto_final = texto_crudo_sin
         else:
-            ESTADOS_TAREAS[task_id]['estado'] = 'Pensando... Aplicando Inteligencia Artificial...'
-            ESTADOS_TAREAS[task_id]['progreso'] = 75
+            ESTADOS_TAREAS[task_id]['estado'] = 'Dividiendo texto para la IA...'
+            ESTADOS_TAREAS[task_id]['progreso'] = 50
             
             if tipo_procesamiento == 'voces':
                 prompt = "Instrucciones: 1. Identifica hablantes. 2. Agrupa frases continuas de la misma persona. 3. Indica el intervalo de tiempo (Ej: '[00:10 - 01:25] Hablante 1: Hola'). 4. Devuelve SOLAMENTE la transcripción en texto plano."
@@ -247,14 +256,24 @@ def procesar_en_fondo(task_id, ruta_original, tipo_procesamiento, formato):
                 prompt = "Instrucciones: Traduce al Español Latino. Agrupa a los hablantes con sus intervalos de tiempo (Ej: '[00:10 - 01:25] Hablante 1: texto'). Devuelve SOLO la traducción en texto plano."
             
             texto_base = texto_crudo_sin if tipo_procesamiento == 'resumen' else texto_crudo_con
-
-            chat_completion = client.chat.completions.create(
-                messages=[{"role": "system", "content": prompt}, {"role": "user", "content": texto_base}],
-                model="openai/gpt-oss-120b",
-                temperature=0.1, 
-                max_tokens=4096  # Expande al máximo la capacidad de escritura de la IA
-            )
-            texto_final = chat_completion.choices[0].message.content
+            
+            # AQUI ESTA LA MAGIA: Dividimos el texto si es muy largo
+            bloques_de_texto = dividir_texto_por_lineas(texto_base, max_lineas=60)
+            total_bloques = len(bloques_de_texto)
+            texto_final = ""
+            
+            for index, bloque in enumerate(bloques_de_texto):
+                if ESTADOS_TAREAS[task_id].get('cancelado'): return
+                ESTADOS_TAREAS[task_id]['estado'] = f'Aplicando IA (Parte {index+1} de {total_bloques})...'
+                ESTADOS_TAREAS[task_id]['progreso'] = 50 + int(40 * (index / total_bloques))
+                
+                chat_completion = client.chat.completions.create(
+                    messages=[{"role": "system", "content": prompt}, {"role": "user", "content": bloque}],
+                    model="openai/gpt-oss-120b",
+                    temperature=0.1, 
+                    max_tokens=4096  
+                )
+                texto_final += chat_completion.choices[0].message.content + "\n\n"
 
         if ESTADOS_TAREAS[task_id].get('cancelado'): return
 
