@@ -244,19 +244,19 @@ def procesar_en_fondo(task_id, ruta_original, tipo_procesamiento, formato):
             ESTADOS_TAREAS[task_id]['progreso'] = 50
             
             if tipo_procesamiento == 'voces':
-                prompt = """Eres un editor y corrector de estilo profesional. Tu trabajo es organizar esta transcripción cruda.
-                REGLAS:
-                1. Agrupa TODO lo que dice una misma persona en UN SOLO PÁRRAFO FLUIDO. ¡PROHIBIDO poner saltos de línea (Enter) dentro del turno de un mismo hablante!
-                2. Inicia cada párrafo con el tiempo y el hablante (Ej: [00:10 - 01:25] Hablante 1:).
-                3. Corrige la ortografía. Asegúrate de añadir las tildes, comas, puntos y la letra 'ñ' que la transcripción automática haya mutilado. Dale sentido y coherencia a las oraciones rotas.
-                4. Elimina tartamudeos y repeticiones inservibles. Escribe exclusivamente en primera persona (diálogo directo)."""
+                prompt = """Actúa como un transcriptor profesional y LITERAL. 
+                REGLAS ESTRICTAS:
+                1. SEPARACIÓN DE HABLANTES: Cada vez que cambie la persona que habla, OBLIGATORIAMENTE debes crear un nuevo párrafo. NUNCA mezcles a dos personas distintas (Ej: Entrevistador y Entrevistado) en el mismo bloque de texto.
+                2. Inicia cada intervención con el tiempo y el nombre o rol (Ej: [00:10 - 01:25] Hablante 1:).
+                3. Agrupa lo que dice la MISMA persona en un párrafo continuo hasta que sea interrumpido o hable otro.
+                4. Escribe TODO en PRIMERA PERSONA (diálogo directo). Tienes absolutamente PROHIBIDO narrar, resumir o explicar en tercera persona."""
             elif tipo_procesamiento == 'profesional':
-                prompt = """Eres un editor profesional. Organiza esta transcripción cruda en un registro formal y limpio.
-                REGLAS:
-                1. Agrupa todo lo que dice un hablante en UN SOLO PÁRRAFO FLUIDO. PROHIBIDO hacer saltos de línea injustificados.
-                2. Inicia con el tiempo (Ej: [00:10 - 01:25] Hablante 1:).
-                3. Corrige ortografía, tildes y signos de puntuación.
-                4. Escribe en primera persona (diálogo directo). Prohibido narrar en tercera persona."""
+                prompt = """Actúa como un editor profesional. Transcribe este texto a un registro formal y limpio.
+                REGLAS ESTRICTAS:
+                1. SEPARACIÓN DE HABLANTES: Es vital que separes el texto creando un nuevo párrafo CADA VEZ que cambia el locutor. NUNCA fusiones a dos personas distintas (como al entrevistador y al entrevistado) en un mismo párrafo gigante. 
+                2. FORMATO: Cada intervención debe iniciar con su tiempo (Ej: [00:10 - 01:25] Entrevistador:). Todo lo que diga esa misma persona hasta que le respondan debe ir en un solo párrafo fluido.
+                3. DIÁLOGO DIRECTO: Escribe exclusivamente en primera persona. Tienes PROHIBIDO narrar o resumir los eventos en tercera persona (Ej: prohibido escribir 'El entrevistado responde que...').
+                4. Elimina muletillas y corrige la ortografía."""
             elif tipo_procesamiento == 'resumen':
                 prompt = "Instrucciones: Elabora un informe analítico detallado. REGLA ESTRICTA: Escribe única y exclusivamente en TEXTO PLANO estándar. Usa SOLO el guion medio corto (-) para listas. PROHIBIDO usar guiones largos, símbolos, hashtags, asteriscos, o flechas."
             elif tipo_procesamiento == 'traduccion':
@@ -264,7 +264,6 @@ def procesar_en_fondo(task_id, ruta_original, tipo_procesamiento, formato):
             
             texto_base = texto_crudo_sin if tipo_procesamiento == 'resumen' else texto_crudo_con
             
-            # Contexto Panorámico: Bloques de 100 líneas (~3-4 minutos) para evitar que la IA pierda el hilo.
             bloques_de_texto = dividir_texto_por_lineas(texto_base, max_lineas=100)
             total_bloques = len(bloques_de_texto)
             texto_final = ""
@@ -286,7 +285,6 @@ def procesar_en_fondo(task_id, ruta_original, tipo_procesamiento, formato):
                         texto_final += chat_completion.choices[0].message.content + "\n\n"
                         exito_ia = True
                         
-                        # Pausa de 20 segundos: Garantiza no sobrepasar los 8000 Tokens Por Minuto (TPM)
                         if index < total_bloques - 1:
                             time.sleep(20)
                         break
