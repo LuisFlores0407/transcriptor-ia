@@ -70,10 +70,23 @@ def chequear_estado(task_id):
 
 @app.route('/descargar/<task_id>', methods=['GET'])
 def descargar_archivo(task_id):
+    # 1. Intentamos obtener el archivo desde la memoria RAM del Worker actual
     tarea = ESTADOS_TAREAS.get(task_id)
-    if tarea and tarea.get('progreso') == 100:
-        return send_file(tarea['archivo_listo'], as_attachment=True)
-    return "El archivo no está listo o hubo un error", 400
+    if tarea and tarea.get('progreso') == 100 and tarea.get('archivo_listo'):
+        if os.path.exists(tarea['archivo_listo']):
+            return send_file(tarea['archivo_listo'], as_attachment=True)
+            
+    # 2. Si la RAM está vacía (chocamos con un Worker distinto), buscamos físicamente en el disco duro
+    temp_dir = tempfile.gettempdir()
+    ruta_pdf = os.path.join(temp_dir, f"resultado_{task_id}.pdf")
+    ruta_docx = os.path.join(temp_dir, f"resultado_{task_id}.docx")
+    
+    if os.path.exists(ruta_pdf):
+        return send_file(ruta_pdf, as_attachment=True)
+    elif os.path.exists(ruta_docx):
+        return send_file(ruta_docx, as_attachment=True)
+        
+    return "El archivo no está listo o el servidor lo borró temporalmente.", 400
 
 def limpiar_texto(texto):
     if not texto: return ""
