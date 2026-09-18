@@ -136,7 +136,6 @@ def procesar_en_fondo(task_id, ruta_original, tipo_procesamiento, formato):
                 except Exception:
                     raise Exception(f"La API no respondió correctamente (Código {response.status_code}).")
                 
-                # Radar actualizado para capturar las llaves 'file' o 'reserved_file' de Spicy-Laika
                 link_descarga = data.get('file') or data.get('reserved_file') or data.get('link') or data.get('url') or data.get('downloadUrl')
                 
                 if link_descarga:
@@ -147,8 +146,7 @@ def procesar_en_fondo(task_id, ruta_original, tipo_procesamiento, formato):
                     }
                     
                     exito_descarga = False
-                    # Bucle más relajado para no activar el límite de velocidad (Error 429)
-                    for intento in range(10):
+                    for intento in range(24):
                         if ESTADOS_TAREAS[task_id].get('cancelado'): return
                         
                         mp3_response = requests.get(link_descarga, headers=headers_descarga, stream=True)
@@ -161,9 +159,9 @@ def procesar_en_fondo(task_id, ruta_original, tipo_procesamiento, formato):
                             ruta_audio = ruta_descarga
                             exito_descarga = True
                             break
-                        elif mp3_response.status_code in [404, 403, 429]:
-                            ESTADOS_TAREAS[task_id]['estado'] = f'Procesando video en la nube. Intento {intento+1}/10...'
-                            time.sleep(15)
+                        elif mp3_response.status_code in [404, 403]:
+                            ESTADOS_TAREAS[task_id]['estado'] = f'Convirtiendo video (puede demorar). Intento {intento+1}/24...'
+                            time.sleep(5)
                         else:
                             raise Exception(f"El enlace generado falló (Error HTTP {mp3_response.status_code}).")
                             
@@ -254,6 +252,7 @@ def procesar_en_fondo(task_id, ruta_original, tipo_procesamiento, formato):
                 messages=[{"role": "system", "content": prompt}, {"role": "user", "content": texto_base}],
                 model="openai/gpt-oss-120b",
                 temperature=0.1, 
+                max_tokens=4096  # Expande al máximo la capacidad de escritura de la IA
             )
             texto_final = chat_completion.choices[0].message.content
 
