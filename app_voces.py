@@ -78,7 +78,6 @@ def descargar_archivo(task_id):
 def limpiar_texto(texto):
     if not texto: return ""
     
-    # Normalización Unicode: Protege las letras acentuadas del español fundiéndolas en un solo bloque seguro
     texto = unicodedata.normalize('NFC', texto)
     
     reemplazos = {
@@ -90,7 +89,6 @@ def limpiar_texto(texto):
     for mal, bien in reemplazos.items():
         texto = texto.replace(mal, bien)
 
-    # Se eliminó el bucle restrictivo "latin-1" que causaba la desaparición de las letras
     return texto
 
 def extraer_id_youtube(url):
@@ -244,7 +242,6 @@ def procesar_en_fondo(task_id, ruta_original, tipo_procesamiento, formato):
             ESTADOS_TAREAS[task_id]['estado'] = 'Dividiendo texto para la IA...'
             ESTADOS_TAREAS[task_id]['progreso'] = 50
             
-            # Ajuste de prompts para forzar párrafos continuos y prohibir la transcripción de muletillas/tartamudeos
             if tipo_procesamiento == 'voces':
                 prompt = "Instrucciones: 1. Identifica hablantes. 2. Agrupa frases continuas de la misma persona. 3. Indica el intervalo de tiempo. REGLA ESTRICTA: Escribe en párrafos fluidos y continuos por hablante. Tienes PROHIBIDO hacer saltos de línea (Enter) a mitad de una oración. Omite tartamudeos, repeticiones y muletillas de ruido. Dale coherencia gramatical al texto."
             elif tipo_procesamiento == 'profesional':
@@ -265,13 +262,31 @@ def procesar_en_fondo(task_id, ruta_original, tipo_procesamiento, formato):
                 ESTADOS_TAREAS[task_id]['estado'] = f'Aplicando IA (Parte {index+1} de {total_bloques})...'
                 ESTADOS_TAREAS[task_id]['progreso'] = 50 + int(40 * (index / total_bloques))
                 
-                chat_completion = client.chat.completions.create(
-                    messages=[{"role": "system", "content": prompt}, {"role": "user", "content": bloque}],
-                    model="openai/gpt-oss-120b",
-                    temperature=0.1, 
-                    max_tokens=4096  
-                )
-                texto_final += chat_completion.choices[0].message.content + "\n\n"
+                exito_ia = False
+                for intento_ia in range(5):
+                    try:
+                        chat_completion = client.chat.completions.create(
+                            messages=[{"role": "system", "content": prompt}, {"role": "user", "content": bloque}],
+                            model="openai/gpt-oss-120b",
+                            temperature=0.1, 
+                            max_tokens=4096  
+                        )
+                        texto_final += chat_completion.choices[0].message.content + "\n\n"
+                        exito_ia = True
+                        
+                        # Pausa táctica de 5 segundos entre cada bloque para no saturar los tokens por minuto
+                        if index < total_bloques - 1:
+                            time.sleep(5)
+                        break
+                    except Exception as e_ia:
+                        if '429' in str(e_ia) or 'Rate limit' in str(e_ia):
+                            ESTADOS_TAREAS[task_id]['estado'] = f'Pausando por límite de IA... reintentando en breve ({intento_ia+1}/5)'
+                            time.sleep(8)  # Si Groq nos frena, esperamos 8 segundos y volvemos a intentar
+                        else:
+                            raise e_ia
+                            
+                if not exito_ia:
+                    raise Exception("Fallo el proceso: Límite de velocidad de la IA excedido repetidamente. Intenta con un video más corto o espera unos minutos.")
 
         if ESTADOS_TAREAS[task_id].get('cancelado'): return
 
