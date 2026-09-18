@@ -7,6 +7,7 @@ import uuid
 import re
 import requests
 import time
+import unicodedata
 from flask import Flask, render_template, request, send_file, jsonify
 from groq import Groq
 from docx import Document
@@ -76,6 +77,10 @@ def descargar_archivo(task_id):
 
 def limpiar_texto(texto):
     if not texto: return ""
+    
+    # Normalización Unicode: Protege las letras acentuadas del español fundiéndolas en un solo bloque seguro
+    texto = unicodedata.normalize('NFC', texto)
+    
     reemplazos = {
         '•': '-', '·': '-', '⁃': '-', '–': '-', '—': '-', '−': '-', '―': '-',
         '“': '"', '”': '"', '‘': "'", '’': "'",
@@ -85,20 +90,14 @@ def limpiar_texto(texto):
     for mal, bien in reemplazos.items():
         texto = texto.replace(mal, bien)
 
-    texto_seguro = ""
-    for char in texto:
-        try:
-            char.encode('latin-1')
-            texto_seguro += char
-        except UnicodeEncodeError:
-            texto_seguro += ' ' 
-    return texto_seguro
+    # Se eliminó el bucle restrictivo "latin-1" que causaba la desaparición de las letras
+    return texto
 
 def extraer_id_youtube(url):
     match = re.search(r"(?:v=|\/)([0-9A-Za-z_-]{11}).*", url)
     return match.group(1) if match else None
 
-def dividir_texto_por_lineas(texto, max_lineas=50):
+def dividir_texto_por_lineas(texto, max_lineas=40):
     lineas = texto.strip().split('\n')
     bloques = []
     for i in range(0, len(lineas), max_lineas):
@@ -245,19 +244,19 @@ def procesar_en_fondo(task_id, ruta_original, tipo_procesamiento, formato):
             ESTADOS_TAREAS[task_id]['estado'] = 'Dividiendo texto para la IA...'
             ESTADOS_TAREAS[task_id]['progreso'] = 50
             
+            # Ajuste de prompts para forzar párrafos continuos y prohibir la transcripción de muletillas/tartamudeos
             if tipo_procesamiento == 'voces':
-                prompt = "Instrucciones: 1. Identifica hablantes. 2. Agrupa frases continuas de la misma persona. 3. Indica el intervalo de tiempo (Ej: '[00:10 - 01:25] Hablante 1: Hola'). REGLA ESTRICTA: Tienes PROHIBIDO resumir, omitir o saltarte palabras. Debes transcribir el 100% del texto original, limitándote únicamente a corregir el formato y agrupar los hablantes."
+                prompt = "Instrucciones: 1. Identifica hablantes. 2. Agrupa frases continuas de la misma persona. 3. Indica el intervalo de tiempo. REGLA ESTRICTA: Escribe en párrafos fluidos y continuos por hablante. Tienes PROHIBIDO hacer saltos de línea (Enter) a mitad de una oración. Omite tartamudeos, repeticiones y muletillas de ruido. Dale coherencia gramatical al texto."
             elif tipo_procesamiento == 'profesional':
-                prompt = "Instrucciones: 1. Agrupa frases del mismo hablante indicando el intervalo de tiempo (Ej: '[00:10 - 01:25] Hablante 1: texto'). 2. Transforma el lenguaje a un registro profesional formal. REGLA ESTRICTA: Tienes PROHIBIDO resumir, omitir detalles o saltarte frases. Mantén la longitud y el sentido completo del texto original."
+                prompt = "Instrucciones: 1. Agrupa frases del mismo hablante indicando el intervalo de tiempo. 2. Transforma el lenguaje a un registro profesional formal. REGLA ESTRICTA: Escribe en párrafos fluidos. Tienes PROHIBIDO hacer saltos de línea injustificados. Elimina ruidos, tartamudeos y corrige la estructura de las oraciones."
             elif tipo_procesamiento == 'resumen':
                 prompt = "Instrucciones: Elabora un informe analítico detallado. REGLA ESTRICTA: Escribe única y exclusivamente en TEXTO PLANO estándar. Usa SOLO el guion medio corto (-) para listas. PROHIBIDO usar guiones largos, símbolos, hashtags, asteriscos, o flechas."
             elif tipo_procesamiento == 'traduccion':
-                prompt = "Instrucciones: Traduce al Español Latino. Agrupa a los hablantes con sus intervalos de tiempo (Ej: '[00:10 - 01:25] Hablante 1: texto'). REGLA ESTRICTA: Tienes PROHIBIDO resumir u omitir frases. Debes traducir el 100% del texto original sin saltarte nada."
+                prompt = "Instrucciones: Traduce al Español Latino. Agrupa a los hablantes con sus intervalos de tiempo. REGLA ESTRICTA: Escribe en párrafos continuos por hablante sin cortes de línea a la mitad de una oración. Traduce de forma fluida y coherente."
             
             texto_base = texto_crudo_sin if tipo_procesamiento == 'resumen' else texto_crudo_con
             
-            # Ajuste de tamaño: Reducimos de 60 a 30 líneas por bloque para evitar la "pereza" de la IA
-            bloques_de_texto = dividir_texto_por_lineas(texto_base, max_lineas=30)
+            bloques_de_texto = dividir_texto_por_lineas(texto_base, max_lineas=40)
             total_bloques = len(bloques_de_texto)
             texto_final = ""
             
