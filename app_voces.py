@@ -80,7 +80,6 @@ def limpiar_texto(texto):
     
     texto = unicodedata.normalize('NFC', texto)
     
-    # Filtro agresivo: Convierte cualquier guion raro, comilla exótica o viñeta en texto plano estándar
     reemplazos = {
         '•': '-', '·': '-', '⁃': '-', '–': '-', '—': '-', '−': '-', '―': '-',
         '“': '"', '”': '"', '«': '"', '»': '"',
@@ -97,7 +96,7 @@ def extraer_id_youtube(url):
     match = re.search(r"(?:v=|\/)([0-9A-Za-z_-]{11}).*", url)
     return match.group(1) if match else None
 
-def dividir_texto_por_lineas(texto, max_lineas=40):
+def dividir_texto_por_lineas(texto, max_lineas=100):
     lineas = texto.strip().split('\n')
     bloques = []
     for i in range(0, len(lineas), max_lineas):
@@ -244,19 +243,29 @@ def procesar_en_fondo(task_id, ruta_original, tipo_procesamiento, formato):
             ESTADOS_TAREAS[task_id]['estado'] = 'Dividiendo texto para la IA...'
             ESTADOS_TAREAS[task_id]['progreso'] = 50
             
-            # Prompts actualizados para prohibir la tercera persona y obligar a transcribir literalmente
             if tipo_procesamiento == 'voces':
-                prompt = "Actúa como un transcriptor profesional y LITERAL. Instrucciones: 1. Identifica hablantes (Ej: Hablante 1, Hablante 2). 2. Agrupa el texto en párrafos continuos por persona. 3. Inicia cada párrafo con el tiempo exacto usando corchetes y un guion simple (Ej: [00:10 - 01:25] Hablante 1:). REGLA ESTRICTA: Escribe TODO en PRIMERA PERSONA como un diálogo directo. Tienes absolutamente PROHIBIDO narrar, resumir o explicar lo que sucede en tercera persona (Ej: prohibido escribir 'El entrevistador preguntó...' o 'Ella respondió que...'). Transcribe las palabras exactas que salen de sus bocas."
+                prompt = """Eres un editor y corrector de estilo profesional. Tu trabajo es organizar esta transcripción cruda.
+                REGLAS:
+                1. Agrupa TODO lo que dice una misma persona en UN SOLO PÁRRAFO FLUIDO. ¡PROHIBIDO poner saltos de línea (Enter) dentro del turno de un mismo hablante!
+                2. Inicia cada párrafo con el tiempo y el hablante (Ej: [00:10 - 01:25] Hablante 1:).
+                3. Corrige la ortografía. Asegúrate de añadir las tildes, comas, puntos y la letra 'ñ' que la transcripción automática haya mutilado. Dale sentido y coherencia a las oraciones rotas.
+                4. Elimina tartamudeos y repeticiones inservibles. Escribe exclusivamente en primera persona (diálogo directo)."""
             elif tipo_procesamiento == 'profesional':
-                prompt = "Actúa como un transcriptor profesional. Instrucciones: 1. Identifica hablantes y pon el tiempo exacto con corchetes y guion simple (Ej: [00:10 - 01:25] Hablante 1:). 2. Transforma el lenguaje a un registro formal. REGLA ESTRICTA: Escribe como un diálogo en PRIMERA PERSONA. Tienes PROHIBIDO narrar o resumir los eventos en tercera persona (Ej: prohibido escribir 'Agradece la oportunidad'). Pon las palabras directamente en boca de los hablantes."
+                prompt = """Eres un editor profesional. Organiza esta transcripción cruda en un registro formal y limpio.
+                REGLAS:
+                1. Agrupa todo lo que dice un hablante en UN SOLO PÁRRAFO FLUIDO. PROHIBIDO hacer saltos de línea injustificados.
+                2. Inicia con el tiempo (Ej: [00:10 - 01:25] Hablante 1:).
+                3. Corrige ortografía, tildes y signos de puntuación.
+                4. Escribe en primera persona (diálogo directo). Prohibido narrar en tercera persona."""
             elif tipo_procesamiento == 'resumen':
                 prompt = "Instrucciones: Elabora un informe analítico detallado. REGLA ESTRICTA: Escribe única y exclusivamente en TEXTO PLANO estándar. Usa SOLO el guion medio corto (-) para listas. PROHIBIDO usar guiones largos, símbolos, hashtags, asteriscos, o flechas."
             elif tipo_procesamiento == 'traduccion':
-                prompt = "Actúa como un traductor literal al Español Latino. Agrupa a los hablantes con sus intervalos de tiempo (Ej: [00:10 - 01:25] Hablante 1:). REGLA ESTRICTA: Escribe en párrafos continuos por hablante en PRIMERA PERSONA. Tienes prohibido resumir o narrar en tercera persona."
+                prompt = "Actúa como un traductor al Español Latino. REGLAS: 1. Agrupa todo lo que dice un hablante en UN SOLO PÁRRAFO FLUIDO. 2. Inicia con el tiempo (Ej: [00:10 - 01:25] Hablante 1:). 3. Traduce de forma coherente, corrigiendo oraciones cortadas."
             
             texto_base = texto_crudo_sin if tipo_procesamiento == 'resumen' else texto_crudo_con
             
-            bloques_de_texto = dividir_texto_por_lineas(texto_base, max_lineas=40)
+            # Contexto Panorámico: Bloques de 100 líneas (~3-4 minutos) para evitar que la IA pierda el hilo.
+            bloques_de_texto = dividir_texto_por_lineas(texto_base, max_lineas=100)
             total_bloques = len(bloques_de_texto)
             texto_final = ""
             
@@ -277,13 +286,14 @@ def procesar_en_fondo(task_id, ruta_original, tipo_procesamiento, formato):
                         texto_final += chat_completion.choices[0].message.content + "\n\n"
                         exito_ia = True
                         
+                        # Pausa de 20 segundos: Garantiza no sobrepasar los 8000 Tokens Por Minuto (TPM)
                         if index < total_bloques - 1:
-                            time.sleep(5)
+                            time.sleep(20)
                         break
                     except Exception as e_ia:
                         if '429' in str(e_ia) or 'Rate limit' in str(e_ia):
                             ESTADOS_TAREAS[task_id]['estado'] = f'Pausando por límite de IA... reintentando en breve ({intento_ia+1}/5)'
-                            time.sleep(8) 
+                            time.sleep(15) 
                         else:
                             raise e_ia
                             
