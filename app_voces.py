@@ -147,7 +147,8 @@ def procesar_en_fondo(task_id, ruta_original, tipo_procesamiento, formato):
                     }
                     
                     exito_descarga = False
-                    for intento in range(24):
+                    # Bucle más relajado para no activar el límite de velocidad (Error 429)
+                    for intento in range(10):
                         if ESTADOS_TAREAS[task_id].get('cancelado'): return
                         
                         mp3_response = requests.get(link_descarga, headers=headers_descarga, stream=True)
@@ -160,9 +161,9 @@ def procesar_en_fondo(task_id, ruta_original, tipo_procesamiento, formato):
                             ruta_audio = ruta_descarga
                             exito_descarga = True
                             break
-                        elif mp3_response.status_code in [404, 403]:
-                            ESTADOS_TAREAS[task_id]['estado'] = f'Convirtiendo video (puede demorar). Intento {intento+1}/24...'
-                            time.sleep(5)
+                        elif mp3_response.status_code in [404, 403, 429]:
+                            ESTADOS_TAREAS[task_id]['estado'] = f'Procesando video en la nube. Intento {intento+1}/10...'
+                            time.sleep(15)
                         else:
                             raise Exception(f"El enlace generado falló (Error HTTP {mp3_response.status_code}).")
                             
