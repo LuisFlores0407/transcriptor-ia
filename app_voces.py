@@ -70,13 +70,11 @@ def chequear_estado(task_id):
 
 @app.route('/descargar/<task_id>', methods=['GET'])
 def descargar_archivo(task_id):
-    # 1. Intentamos obtener el archivo desde la memoria RAM del Worker actual
     tarea = ESTADOS_TAREAS.get(task_id)
     if tarea and tarea.get('progreso') == 100 and tarea.get('archivo_listo'):
         if os.path.exists(tarea['archivo_listo']):
             return send_file(tarea['archivo_listo'], as_attachment=True)
             
-    # 2. Si la RAM está vacía (chocamos con un Worker distinto), buscamos físicamente en el disco duro
     temp_dir = tempfile.gettempdir()
     ruta_pdf = os.path.join(temp_dir, f"resultado_{task_id}.pdf")
     ruta_docx = os.path.join(temp_dir, f"resultado_{task_id}.docx")
@@ -109,7 +107,7 @@ def extraer_id_youtube(url):
     match = re.search(r"(?:v=|\/)([0-9A-Za-z_-]{11}).*", url)
     return match.group(1) if match else None
 
-def dividir_texto_por_lineas(texto, max_lineas=100):
+def dividir_texto_por_lineas(texto, max_lineas=80):
     lineas = texto.strip().split('\n')
     bloques = []
     for i in range(0, len(lineas), max_lineas):
@@ -257,18 +255,18 @@ def procesar_en_fondo(task_id, ruta_original, tipo_procesamiento, formato):
             ESTADOS_TAREAS[task_id]['progreso'] = 50
             
             if tipo_procesamiento == 'voces':
-                prompt = """Actúa como un transcriptor profesional y LITERAL. 
-                REGLAS ESTRICTAS:
-                1. SEPARACIÓN DE HABLANTES: Cada vez que cambie la persona que habla, OBLIGATORIAMENTE debes crear un nuevo párrafo. NUNCA mezcles a dos personas distintas (Ej: Entrevistador y Entrevistado) en el mismo bloque de texto.
-                2. Inicia cada intervención con el tiempo y el nombre o rol (Ej: [00:10 - 01:25] Hablante 1:).
-                3. Agrupa lo que dice la MISMA persona en un párrafo continuo hasta que sea interrumpido o hable otro.
-                4. Escribe TODO en PRIMERA PERSONA (diálogo directo). Tienes absolutamente PROHIBIDO narrar, resumir o explicar en tercera persona."""
+                prompt = """Actúa como un transcriptor profesional.
+                REGLAS ESTRICTAS E INQUEBRANTABLES:
+                1. PÁRRAFOS CONTINUOS: Transcribe el texto de forma fluida. Si una persona habla durante varios minutos, une TODAS sus oraciones en un solo bloque de texto. Tienes PROHIBIDO hacer saltos de línea (Enter) por cada oración.
+                2. UNA MARCA DE TIEMPO POR TURNO: Escribe el corchete de tiempo y el hablante SOLO UNA VEZ al iniciar su turno (Ej: [00:10] Entrevistador:). IGNORA Y NO COPIES los tiempos intermedios mientras esa persona siga hablando.
+                3. Transcribe todo el diálogo en primera persona. NO resumas y NO narres en tercera persona.
+                4. Cambia de párrafo únicamente cuando otra persona tome la palabra."""
             elif tipo_procesamiento == 'profesional':
                 prompt = """Actúa como un editor profesional. Transcribe este texto a un registro formal y limpio.
                 REGLAS ESTRICTAS:
-                1. SEPARACIÓN DE HABLANTES: Es vital que separes el texto creando un nuevo párrafo CADA VEZ que cambia el locutor. NUNCA fusiones a dos personas distintas (como al entrevistador y al entrevistado) en un mismo párrafo gigante. 
-                2. FORMATO: Cada intervención debe iniciar con su tiempo (Ej: [00:10 - 01:25] Entrevistador:). Todo lo que diga esa misma persona hasta que le respondan debe ir en un solo párrafo fluido.
-                3. DIÁLOGO DIRECTO: Escribe exclusivamente en primera persona. Tienes PROHIBIDO narrar o resumir los eventos en tercera persona (Ej: prohibido escribir 'El entrevistado responde que...').
+                1. SEPARACIÓN DE HABLANTES: Es vital que separes el texto creando un nuevo párrafo CADA VEZ que cambia el locutor. NUNCA fusiones a dos personas distintas en un mismo párrafo gigante. 
+                2. FORMATO: Cada intervención debe iniciar con su tiempo (Ej: [00:10] Entrevistador:). Todo lo que diga esa misma persona hasta que le respondan debe ir en un solo párrafo fluido, omitiendo los tiempos intermedios.
+                3. DIÁLOGO DIRECTO: Escribe exclusivamente en primera persona. Tienes PROHIBIDO narrar o resumir los eventos en tercera persona.
                 4. Elimina muletillas y corrige la ortografía."""
             elif tipo_procesamiento == 'resumen':
                 prompt = "Instrucciones: Elabora un informe analítico detallado. REGLA ESTRICTA: Escribe única y exclusivamente en TEXTO PLANO estándar. Usa SOLO el guion medio corto (-) para listas. PROHIBIDO usar guiones largos, símbolos, hashtags, asteriscos, o flechas."
@@ -277,7 +275,8 @@ def procesar_en_fondo(task_id, ruta_original, tipo_procesamiento, formato):
             
             texto_base = texto_crudo_sin if tipo_procesamiento == 'resumen' else texto_crudo_con
             
-            bloques_de_texto = dividir_texto_por_lineas(texto_base, max_lineas=100)
+            # Reducimos a 80 líneas para que la IA procese sin asfixiarse, evitando la pérdida de minutos.
+            bloques_de_texto = dividir_texto_por_lineas(texto_base, max_lineas=80)
             total_bloques = len(bloques_de_texto)
             texto_final = ""
             
