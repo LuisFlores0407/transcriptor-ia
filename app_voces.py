@@ -80,11 +80,13 @@ def limpiar_texto(texto):
     
     texto = unicodedata.normalize('NFC', texto)
     
+    # Filtro agresivo: Convierte cualquier guion raro, comilla exótica o viñeta en texto plano estándar
     reemplazos = {
         '•': '-', '·': '-', '⁃': '-', '–': '-', '—': '-', '−': '-', '―': '-',
-        '“': '"', '”': '"', '‘': "'", '’': "'",
-        '**': '', '##': '', '#': '', '*': '-', '→': '-', '⇒': '-',
-        '\xa0': ' ', '\u202f': ' ', '\u200b': ''
+        '“': '"', '”': '"', '«': '"', '»': '"',
+        '‘': "'", '’': "'", '´': "'", '`': "'",
+        '**': '', '##': '', '#': '', '*': '', '_': '',
+        '\xa0': ' ', '\u202f': ' ', '\u200b': '', '\t': ' '
     }
     for mal, bien in reemplazos.items():
         texto = texto.replace(mal, bien)
@@ -242,14 +244,15 @@ def procesar_en_fondo(task_id, ruta_original, tipo_procesamiento, formato):
             ESTADOS_TAREAS[task_id]['estado'] = 'Dividiendo texto para la IA...'
             ESTADOS_TAREAS[task_id]['progreso'] = 50
             
+            # Prompts actualizados para prohibir la tercera persona y obligar a transcribir literalmente
             if tipo_procesamiento == 'voces':
-                prompt = "Instrucciones: 1. Identifica hablantes. 2. Agrupa frases continuas de la misma persona. 3. Indica el intervalo de tiempo. REGLA ESTRICTA: Escribe en párrafos fluidos y continuos por hablante. Tienes PROHIBIDO hacer saltos de línea (Enter) a mitad de una oración. Omite tartamudeos, repeticiones y muletillas de ruido. Dale coherencia gramatical al texto."
+                prompt = "Actúa como un transcriptor profesional y LITERAL. Instrucciones: 1. Identifica hablantes (Ej: Hablante 1, Hablante 2). 2. Agrupa el texto en párrafos continuos por persona. 3. Inicia cada párrafo con el tiempo exacto usando corchetes y un guion simple (Ej: [00:10 - 01:25] Hablante 1:). REGLA ESTRICTA: Escribe TODO en PRIMERA PERSONA como un diálogo directo. Tienes absolutamente PROHIBIDO narrar, resumir o explicar lo que sucede en tercera persona (Ej: prohibido escribir 'El entrevistador preguntó...' o 'Ella respondió que...'). Transcribe las palabras exactas que salen de sus bocas."
             elif tipo_procesamiento == 'profesional':
-                prompt = "Instrucciones: 1. Agrupa frases del mismo hablante indicando el intervalo de tiempo. 2. Transforma el lenguaje a un registro profesional formal. REGLA ESTRICTA: Escribe en párrafos fluidos. Tienes PROHIBIDO hacer saltos de línea injustificados. Elimina ruidos, tartamudeos y corrige la estructura de las oraciones."
+                prompt = "Actúa como un transcriptor profesional. Instrucciones: 1. Identifica hablantes y pon el tiempo exacto con corchetes y guion simple (Ej: [00:10 - 01:25] Hablante 1:). 2. Transforma el lenguaje a un registro formal. REGLA ESTRICTA: Escribe como un diálogo en PRIMERA PERSONA. Tienes PROHIBIDO narrar o resumir los eventos en tercera persona (Ej: prohibido escribir 'Agradece la oportunidad'). Pon las palabras directamente en boca de los hablantes."
             elif tipo_procesamiento == 'resumen':
                 prompt = "Instrucciones: Elabora un informe analítico detallado. REGLA ESTRICTA: Escribe única y exclusivamente en TEXTO PLANO estándar. Usa SOLO el guion medio corto (-) para listas. PROHIBIDO usar guiones largos, símbolos, hashtags, asteriscos, o flechas."
             elif tipo_procesamiento == 'traduccion':
-                prompt = "Instrucciones: Traduce al Español Latino. Agrupa a los hablantes con sus intervalos de tiempo. REGLA ESTRICTA: Escribe en párrafos continuos por hablante sin cortes de línea a la mitad de una oración. Traduce de forma fluida y coherente."
+                prompt = "Actúa como un traductor literal al Español Latino. Agrupa a los hablantes con sus intervalos de tiempo (Ej: [00:10 - 01:25] Hablante 1:). REGLA ESTRICTA: Escribe en párrafos continuos por hablante en PRIMERA PERSONA. Tienes prohibido resumir o narrar en tercera persona."
             
             texto_base = texto_crudo_sin if tipo_procesamiento == 'resumen' else texto_crudo_con
             
@@ -274,14 +277,13 @@ def procesar_en_fondo(task_id, ruta_original, tipo_procesamiento, formato):
                         texto_final += chat_completion.choices[0].message.content + "\n\n"
                         exito_ia = True
                         
-                        # Pausa táctica de 5 segundos entre cada bloque para no saturar los tokens por minuto
                         if index < total_bloques - 1:
                             time.sleep(5)
                         break
                     except Exception as e_ia:
                         if '429' in str(e_ia) or 'Rate limit' in str(e_ia):
                             ESTADOS_TAREAS[task_id]['estado'] = f'Pausando por límite de IA... reintentando en breve ({intento_ia+1}/5)'
-                            time.sleep(8)  # Si Groq nos frena, esperamos 8 segundos y volvemos a intentar
+                            time.sleep(8) 
                         else:
                             raise e_ia
                             
